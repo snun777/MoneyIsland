@@ -1,0 +1,36 @@
+{
+  "name": "MoneyIsland",
+  "tree": {
+    "$className": "DataModel",
+
+    "ServerScriptService": {
+      "$className": "ServerScriptService",
+
+      "MainGameServer": {
+        "$path": "ServerScriptService/MainGameServer.server.lua"
+      },
+      "MapBuilder": {
+        "$path": "ServerScriptService/MapBuilder.server.lua"
+      },
+      "GamepassEnforcer": {
+        "$path": "ServerScriptService/GamepassEnforcer.server.lua"
+      },
+      "Leaderboard": {
+        "$path": "ServerScriptService/Leaderboard.server.lua"
+      }
+    },
+
+    "StarterPlayer": {
+      "$className": "StarterPlayer",
+      "StarterPlayerScripts": {
+        "$className": "StarterPlayerScripts",
+        "ClientUI": {
+          "$path": "StarterPlayerScripts/ClientUI.client.lua"
+        },
+        "CoinSpin": {
+          "$path": "StarterPlayerScripts/CoinSpin.client.lua"
+        }
+      }
+    }
+  }
+}
