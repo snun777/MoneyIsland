@@ -351,6 +351,38 @@ raidSubLbl.TextColor3 = Color3.fromRGB(200, 140, 140)
 raidSubLbl.Font = Enum.Font.Gotham; raidSubLbl.TextSize = 11
 raidSubLbl.Text = "Stand on the plot to steal it"
 
+-- ── DEFENDER RAID PROGRESS BAR ───────────────────────────────
+-- Shows to the OWNER how far the raid has progressed
+local defRaidBar = Instance.new("Frame", sg)
+defRaidBar.Name = "DefenderRaidBar"
+defRaidBar.Size = UDim2.new(0, 310, 0, 48)
+defRaidBar.Position = UDim2.new(1, -322, 1, -105)
+defRaidBar.BackgroundColor3 = Color3.fromRGB(5, 25, 5)
+defRaidBar.BorderSizePixel = 0; defRaidBar.Visible = false
+Instance.new("UICorner", defRaidBar).CornerRadius = UDim.new(0, 10)
+local defRaidStroke = Instance.new("UIStroke", defRaidBar)
+defRaidStroke.Color = Color3.fromRGB(255, 130, 0); defRaidStroke.Thickness = 2.5
+
+local defRaidFill = Instance.new("Frame", defRaidBar)
+defRaidFill.Size = UDim2.new(0, 0, 1, 0)
+defRaidFill.BackgroundColor3 = Color3.fromRGB(255, 90, 0)
+defRaidFill.BorderSizePixel = 0
+Instance.new("UICorner", defRaidFill).CornerRadius = UDim.new(0, 10)
+
+local defRaidLbl = Instance.new("TextLabel", defRaidBar)
+defRaidLbl.Size = UDim2.new(1, -8, 0.55, 0); defRaidLbl.Position = UDim2.new(0, 4, 0, 0)
+defRaidLbl.BackgroundTransparency = 1
+defRaidLbl.TextColor3 = Color3.fromRGB(255, 220, 140)
+defRaidLbl.Font = Enum.Font.GothamBold; defRaidLbl.TextSize = 13
+defRaidLbl.Text = "🚨 Being Raided!"
+
+local defRaidSubLbl = Instance.new("TextLabel", defRaidBar)
+defRaidSubLbl.Size = UDim2.new(1, -8, 0.45, 0); defRaidSubLbl.Position = UDim2.new(0, 4, 0.55, 0)
+defRaidSubLbl.BackgroundTransparency = 1
+defRaidSubLbl.TextColor3 = Color3.fromRGB(200, 170, 100)
+defRaidSubLbl.Font = Enum.Font.Gotham; defRaidSubLbl.TextSize = 11
+defRaidSubLbl.Text = "Return to defend!"
+
 -- ── RAID DEFENDER ALERT ──────────────────────────────────
 -- Shows when the player is the one being raided
 local defenseAlert = Instance.new("Frame", sg)
@@ -520,19 +552,39 @@ RE_MachineRate.OnClientEvent:Connect(function(plotId, coinVal, cd)
     updateMachineRateBB(plotId, coinVal, cd)
 end)
 
--- Raid status → for raider: show progress. Code -99 = defender alert.
-RE_RaidStatus.OnClientEvent:Connect(function(plotId, ownerOrRaiderName, progress)
+-- Raid status handler.
+-- progress == -99  → initial alert (owner being raided for first time)
+-- progress == -1   → raid cancelled/ended (clear bar)
+-- progress 0..1   → live progress
+-- isDefender==true → this update is for the owner's defender bar
+RE_RaidStatus.OnClientEvent:Connect(function(plotId, ownerOrRaiderName, progress, isDefender)
     if progress == -99 then
-        -- We are the OWNER being raided
+        -- Big popup alert for the owner
         showDefenseAlert(ownerOrRaiderName, plotId)
+    elseif isDefender then
+        -- Defender's own bar (bottom-right)
+        if progress < 0 then
+            defRaidBar.Visible = false
+        else
+            defRaidBar.Visible = true
+            local pct = math.clamp(progress, 0, 1)
+            TweenService:Create(defRaidFill, TweenInfo.new(0.3), {Size = UDim2.new(pct, 0, 1, 0)}):Play()
+            defRaidFill.BackgroundColor3 = pct > 0.6
+                and Color3.fromRGB(220, 40, 40)
+                or  Color3.fromRGB(255, 130, 0)
+            defRaidLbl.Text    = "🚨 " .. ownerOrRaiderName .. " raiding " .. plotId .. "! " .. math.floor(pct*100) .. "%"
+            defRaidSubLbl.Text = "Return NOW! ~" .. math.ceil((1-pct)*5) .. "s left"
+        end
     elseif progress < 0 then
+        -- Attacker bar cleared
         raidBar.Visible = false
         stopVignette()
     else
+        -- Attacker bar (bottom-left)
         raidBar.Visible = true
         startVignette()
         TweenService:Create(raidFill, TweenInfo.new(0.3), {Size = UDim2.new(math.clamp(progress, 0, 1), 0, 1, 0)}):Play()
-        raidLbl.Text   = "⚔️ Raiding " .. ownerOrRaiderName .. "!  " .. math.floor(progress * 100) .. "%"
+        raidLbl.Text    = "⚔️ Raiding " .. ownerOrRaiderName .. "!  " .. math.floor(progress * 100) .. "%"
         raidSubLbl.Text = "Stay on the plot — " .. math.ceil((1-progress)*5) .. "s to steal!"
     end
 end)
@@ -621,36 +673,114 @@ RE_PlayerDied.OnClientEvent:Connect(function(isMe, killerName, coinsLost)
     deathScreen.Visible = false
 end)
 
+-- ── FULL-SCREEN EVENT FLASH ───────────────────────────────
+local eventFlash = Instance.new("Frame", sg)
+eventFlash.Name = "EventFlash"; eventFlash.Size = UDim2.new(1,0,1,0)
+eventFlash.BackgroundColor3 = Color3.fromRGB(255,200,0)
+eventFlash.BackgroundTransparency = 1; eventFlash.BorderSizePixel = 0
+eventFlash.ZIndex = 60; eventFlash.Visible = false
+
 -- ── RANDOM EVENT BANNER ───────────────────────────────────
 local eventBanner = Instance.new("Frame", sg)
-eventBanner.Name = "EventBanner"; eventBanner.Size = UDim2.new(0, 380, 0, 56)
-eventBanner.Position = UDim2.new(0.5, -190, 0, -70)
+eventBanner.Name = "EventBanner"; eventBanner.Size = UDim2.new(0, 480, 0, 84)
+eventBanner.Position = UDim2.new(0.5, -240, 0, -100)
 eventBanner.BackgroundColor3 = Color3.fromRGB(8,8,22); eventBanner.BorderSizePixel = 0
-Instance.new("UICorner", eventBanner).CornerRadius = UDim.new(0, 14)
+Instance.new("UICorner", eventBanner).CornerRadius = UDim.new(0, 16)
 local evStroke = Instance.new("UIStroke", eventBanner)
-evStroke.Color = Color3.fromRGB(255,200,0); evStroke.Thickness = 2.5
+evStroke.Color = Color3.fromRGB(255,200,0); evStroke.Thickness = 3
 
 local evTitle = Instance.new("TextLabel", eventBanner)
-evTitle.Size = UDim2.new(1,-12,0,28); evTitle.Position = UDim2.new(0,6,0,4)
+evTitle.Size = UDim2.new(1,-12,0,44); evTitle.Position = UDim2.new(0,6,0,4)
 evTitle.BackgroundTransparency = 1; evTitle.Text = "🌟 EVENT"
 evTitle.TextColor3 = Color3.fromRGB(255,215,0); evTitle.Font = Enum.Font.GothamBold
-evTitle.TextSize = 18; evTitle.TextXAlignment = Enum.TextXAlignment.Center
+evTitle.TextSize = 26; evTitle.TextXAlignment = Enum.TextXAlignment.Center
 
 local evDesc = Instance.new("TextLabel", eventBanner)
-evDesc.Size = UDim2.new(1,-12,0,20); evDesc.Position = UDim2.new(0,6,0,32)
+evDesc.Size = UDim2.new(1,-12,0,28); evDesc.Position = UDim2.new(0,6,0,50)
 evDesc.BackgroundTransparency = 1; evDesc.Text = ""
-evDesc.TextColor3 = Color3.fromRGB(200,200,230); evDesc.Font = Enum.Font.Gotham
-evDesc.TextSize = 12; evDesc.TextXAlignment = Enum.TextXAlignment.Center
+evDesc.TextColor3 = Color3.fromRGB(220,220,255); evDesc.Font = Enum.Font.GothamBold
+evDesc.TextSize = 14; evDesc.TextXAlignment = Enum.TextXAlignment.Center
+
+-- ── ACTIVE EVENT CHIP (persistent while event runs) ───────────
+local eventChip = Instance.new("Frame", sg)
+eventChip.Name = "EventChip"; eventChip.Size = UDim2.new(0, 260, 0, 26)
+eventChip.Position = UDim2.new(0.5, -130, 0, 78)
+eventChip.BackgroundColor3 = Color3.fromRGB(18,10,40)
+eventChip.BorderSizePixel = 0; eventChip.Visible = false
+Instance.new("UICorner", eventChip).CornerRadius = UDim.new(0, 8)
+local ecStroke = Instance.new("UIStroke", eventChip)
+ecStroke.Color = Color3.fromRGB(255,200,0); ecStroke.Thickness = 1.5
+local ecLbl = Instance.new("TextLabel", eventChip)
+ecLbl.Size = UDim2.new(1,0,1,0); ecLbl.BackgroundTransparency = 1
+ecLbl.TextColor3 = Color3.fromRGB(255,215,0); ecLbl.Font = Enum.Font.GothamBold
+ecLbl.TextSize = 12; ecLbl.Text = "⚡ EVENT ACTIVE"
+
+local evPulseThread = nil
 
 RE_RandomEvent.OnClientEvent:Connect(function(evId, evName, evDesc_txt, evCol, evDur)
-    evStroke.Color = Color3.fromRGB(255,200,0)
+    local isEnd = evId:sub(-4) == "_END"
+    local colMap2 = {
+        gold=Color3.fromRGB(255,200,0), green=Color3.fromRGB(0,210,80),
+        red=Color3.fromRGB(255,55,55),  blue=Color3.fromRGB(55,155,255),
+    }
+    local flashCol = colMap2[evCol] or Color3.fromRGB(255,200,0)
+
+    if isEnd then
+        if evPulseThread then task.cancel(evPulseThread); evPulseThread = nil end
+        TweenService:Create(eventBanner, TweenInfo.new(0.3),
+            {Position = UDim2.new(0.5,-240,0,-100)}):Play()
+        TweenService:Create(eventChip, TweenInfo.new(0.3), {BackgroundTransparency=1}):Play()
+        task.delay(0.35, function()
+            eventChip.Visible = false
+            eventChip.BackgroundTransparency = 0
+        end)
+        return
+    end
+
+    -- Full-screen flash
+    eventFlash.BackgroundColor3 = flashCol
+    eventFlash.Visible = true
+    TweenService:Create(eventFlash, TweenInfo.new(0.18), {BackgroundTransparency = 0.45}):Play()
+    task.delay(0.18, function()
+        TweenService:Create(eventFlash, TweenInfo.new(0.45), {BackgroundTransparency = 1}):Play()
+        task.delay(0.5, function() eventFlash.Visible = false end)
+    end)
+
+    -- Banner
+    evStroke.Color = flashCol
+    evTitle.TextColor3 = flashCol
     evTitle.Text = "🌟 " .. evName
     evDesc.Text  = evDesc_txt
-    TweenService:Create(eventBanner, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
-        {Position = UDim2.new(0.5,-190,0,10)}):Play()
-    task.delay(evDur or 8, function()
+    TweenService:Create(eventBanner,
+        TweenInfo.new(0.55, Enum.EasingStyle.Elastic, Enum.EasingDirection.Out),
+        {Position = UDim2.new(0.5,-240,0,10)}):Play()
+
+    -- Persistent chip
+    ecStroke.Color = flashCol
+    ecLbl.TextColor3 = flashCol
+    ecLbl.Text = "⚡ " .. evName
+    eventChip.Visible = true
+
+    -- Pulse the banner border while active
+    if evPulseThread then task.cancel(evPulseThread); evPulseThread = nil end
+    local dur = evDur or 30
+    evPulseThread = task.spawn(function()
+        local endClock = os.clock() + dur
+        while os.clock() < endClock do
+            TweenService:Create(evStroke, TweenInfo.new(0.45), {Color=Color3.fromRGB(255,255,120)}):Play()
+            TweenService:Create(ecStroke, TweenInfo.new(0.45), {Color=Color3.fromRGB(255,255,120)}):Play()
+            task.wait(0.45)
+            TweenService:Create(evStroke, TweenInfo.new(0.45), {Color=flashCol}):Play()
+            TweenService:Create(ecStroke, TweenInfo.new(0.45), {Color=flashCol}):Play()
+            task.wait(0.45)
+        end
+        evPulseThread = nil
+    end)
+
+    -- Slide banner out after duration
+    task.delay(dur, function()
         TweenService:Create(eventBanner, TweenInfo.new(0.3),
-            {Position = UDim2.new(0.5,-190,0,-70)}):Play()
+            {Position = UDim2.new(0.5,-240,0,-100)}):Play()
     end)
 end)
 
@@ -922,9 +1052,10 @@ end
 
 -- ── BUILDING UPGRADE PANEL ────────────────────────────────
 local PATHS = {
-    A={name="⚡ Production", desc="More coins per tick",  col=Color3.fromRGB(255,200,0),  costs={500,2500,10000,30000}, labels={"1.5×","2.0×","3.0×","5.0×"}},
-    B={name="⏱️ Efficiency",  desc="Faster tick interval", col=Color3.fromRGB(80,220,255),  costs={750,3500,12000,35000}, labels={"-1s","-2s","-3s","-5s"}},
-    C={name="🛡️ Defense",     desc="Raid protection",      col=Color3.fromRGB(255,80,200),  costs={1000,6000,20000,50000},labels={"8s harder","8min shield","Earn while defending","Golden: 3×"}},
+    A={name="⚡ Production", desc="More coins per tick",  col=Color3.fromRGB(255,200,0),  costs={500,2500,10000,30000},   labels={"1.5×","2.0×","3.0×","5.0×"}},
+    B={name="⏱️ Efficiency",  desc="Faster tick interval", col=Color3.fromRGB(80,220,255),  costs={750,3500,12000,35000},   labels={"-1s","-2s","-3s","-5s"}},
+    C={name="🛡️ Defense",     desc="Raid protection",      col=Color3.fromRGB(255,80,200),  costs={1000,6000,20000,50000},  labels={"8s harder","8min shield","Earn while defending","Golden: 3×"}},
+    D={name="🔰 Auto-Shield", desc="Blocks 1 raid / 4min", col=Color3.fromRGB(80,255,180),  costs={8000000},                labels={"Auto-Shield every 4min"}},
 }
 
 local buildPanel = Instance.new("Frame", sg)
@@ -983,10 +1114,10 @@ local function buildUpgradePanel(data)
 
         -- Three path buttons per plot
         local plotUpg = plotUpgrades[plotId] or {}
-        for _, pathKey in ipairs({"A","B","C"}) do
+        for _, pathKey in ipairs({"A","B","C","D"}) do
             local path = PATHS[pathKey]
             local level = plotUpg[pathKey] or 0
-            local maxed = level >= 4
+            local maxed = level >= #path.costs
             local cost  = not maxed and path.costs[level + 1] or 0
             local canBuy= not maxed and coins >= cost
             local nextLabel = not maxed and path.labels[level + 1] or "MAX"
@@ -1005,7 +1136,7 @@ local function buildUpgradePanel(data)
 
             local pst = Instance.new("TextLabel", card); pst.Size = UDim2.new(0.55,0,0,18)
             pst.Position = UDim2.new(0,8,0,28); pst.BackgroundTransparency = 1
-            pst.Text = "Lv " .. level .. "/4  Next: " .. nextLabel
+            pst.Text = "Lv " .. level .. "/" .. #path.costs .. "  Next: " .. nextLabel
             pst.TextColor3 = Color3.fromRGB(160,160,190); pst.Font = Enum.Font.Gotham; pst.TextSize = 11
             pst.TextXAlignment = Enum.TextXAlignment.Left
 
