@@ -1,5 +1,5 @@
 -- ============================================================
--- MONEY ISLAND TYCOON — ClientUI.lua  (LocalScript)
+-- MONEY ISLAND TYCOON — ClientUI.lua  (v2 LocalScript)
 -- Place in: StarterPlayerScripts
 -- ============================================================
 
@@ -24,6 +24,7 @@ local RE_RequestData  = waitRE("RequestData")
 local RE_GeyserState  = waitRE("GeyserState")
 local RE_PlotTick     = waitRE("PlotTick_RE")
 local RE_RaidStatus   = waitRE("RaidStatus_RE")
+local RE_MachineRate  = waitRE("MachineRate_RE")
 
 -- ── SOUND SYSTEM ─────────────────────────────────────────
 local SoundService = game:GetService("SoundService")
@@ -38,15 +39,39 @@ local function makeSound(id, vol, pitch)
     s.Parent = SoundService
     return s
 end
--- To add sounds: Studio Toolbox > Audio tab > search free audio > copy the numeric ID
--- Replace each 0 with a real audio asset ID (must be "Audio" type, not Image/Model)
 local SFX = {
-    coin      = makeSound(0, 0.4, 1.1),   -- coin collect
-    jackpot   = makeSound(0, 0.7, 1.0),   -- jackpot/rare coin
-    geyser    = makeSound(0, 0.55, 0.9),  -- geyser activates
-    megaBurst = makeSound(0, 0.8, 1.0),   -- mega burst event
-    plotBuy   = makeSound(0, 0.6, 0.85),  -- plot purchased
-    prestige  = makeSound(0, 0.9, 1.0),   -- prestige/rebirth
+    coin      = makeSound(0, 0.4, 1.1),
+    jackpot   = makeSound(0, 0.7, 1.0),
+    geyser    = makeSound(0, 0.55, 0.9),
+    megaBurst = makeSound(0, 0.8, 1.0),
+    plotBuy   = makeSound(0, 0.6, 0.85),
+    prestige  = makeSound(0, 0.9, 1.0),
+    raidAlert = makeSound(0, 0.9, 0.8),
+    swordHit  = makeSound(0, 0.7, 1.0),
+}
+
+-- ── PLOT POSITIONS (mirrors server PLOT_CENTERS) ─────────
+local PLOT_CENTERS_CLIENT = {
+    L_N   = Vector3.new(-50,  1,  50),
+    R_N   = Vector3.new( 50,  1,  50),
+    L_S   = Vector3.new(-50,  1, -50),
+    R_S   = Vector3.new( 50,  1, -50),
+    LL_M  = Vector3.new(-100, 1,   0),
+    RR_M  = Vector3.new( 100, 1,   0),
+    C_NN  = Vector3.new(  0,  1, 100),
+    C_SS  = Vector3.new(  0,  1,-100),
+    LL_N  = Vector3.new(-100, 1,  50),
+    LL_S  = Vector3.new(-100, 1, -50),
+    RR_N  = Vector3.new( 100, 1,  50),
+    RR_S  = Vector3.new( 100, 1, -50),
+    L_NN  = Vector3.new( -50, 1, 100),
+    R_NN  = Vector3.new(  50, 1, 100),
+    L_SS  = Vector3.new( -50, 1,-100),
+    R_SS  = Vector3.new(  50, 1,-100),
+    LL_NN = Vector3.new(-100, 1, 100),
+    RR_NN = Vector3.new( 100, 1, 100),
+    LL_SS = Vector3.new(-100, 1,-100),
+    RR_SS = Vector3.new( 100, 1,-100),
 }
 
 -- ── state ────────────────────────────────────────────────
@@ -54,6 +79,15 @@ local currentData  = nil
 local upgradesDef  = nil
 local shopOpen     = false
 local lastRebirths = -1
+local machineRates = {}  -- [plotId] = {coinVal, cd}
+
+-- ── FORMAT ───────────────────────────────────────────────
+local function fmt(n)
+    if n>=1e9 then return string.format("%.1fB",n/1e9)
+    elseif n>=1e6 then return string.format("%.1fM",n/1e6)
+    elseif n>=1e3 then return string.format("%.1fK",n/1e3)
+    else return tostring(math.floor(n)) end
+end
 
 -- ============================================================
 -- BUILD GUI
@@ -93,7 +127,7 @@ rebirthLbl.Text="🔥 x0"; rebirthLbl.TextColor3=Color3.fromRGB(255,120,0)
 rebirthLbl.Font=Enum.Font.GothamBold; rebirthLbl.TextSize=18
 rebirthLbl.TextXAlignment=Enum.TextXAlignment.Right
 
--- ── RANK BADGE (shows #1 / #2 etc. in HUD) ───────────────
+-- ── RANK BADGE ───────────────────────────────────────────
 local rankBadge = Instance.new("Frame", hud)
 rankBadge.Size = UDim2.new(0, 46, 0, 26); rankBadge.Position = UDim2.new(1,-52,0.5,-13)
 rankBadge.BackgroundColor3 = Color3.fromRGB(40,30,0); rankBadge.BorderSizePixel = 0
@@ -103,7 +137,7 @@ rankLbl.Size = UDim2.new(1,0,1,0); rankLbl.BackgroundTransparency = 1
 rankLbl.Text = "#-"; rankLbl.TextColor3 = Color3.fromRGB(255,215,0)
 rankLbl.Font = Enum.Font.GothamBold; rankLbl.TextSize = 14
 
--- ── PRESTIGE PROGRESS BAR (thin bar at HUD bottom) ───────
+-- ── PRESTIGE PROGRESS BAR ────────────────────────────────
 local pBarBg = Instance.new("Frame", hud)
 pBarBg.Size = UDim2.new(1,-20,0,4); pBarBg.Position = UDim2.new(0,10,1,-7)
 pBarBg.BackgroundColor3 = Color3.fromRGB(25,20,40); pBarBg.BorderSizePixel = 0
@@ -113,11 +147,62 @@ pBarFill.Size = UDim2.new(0,0,1,0); pBarFill.BackgroundColor3 = Color3.fromRGB(2
 pBarFill.BorderSizePixel = 0
 Instance.new("UICorner", pBarFill).CornerRadius = UDim.new(1,0)
 
--- ── GEYSER INDICATOR BAR (5 dots below HUD) ──────────────
+-- ── SWORD COOLDOWN INDICATOR (below HUD) ────────────────
+local swordBar = Instance.new("Frame", sg)
+swordBar.Size = UDim2.new(0, 160, 0, 20); swordBar.Position = UDim2.new(0.5, -80, 0, 72)
+swordBar.BackgroundColor3 = Color3.fromRGB(20, 8, 8); swordBar.BorderSizePixel = 0
+swordBar.Visible = false
+Instance.new("UICorner", swordBar).CornerRadius = UDim.new(0, 6)
+local swordStroke = Instance.new("UIStroke", swordBar)
+swordStroke.Color = Color3.fromRGB(200, 80, 0); swordStroke.Thickness = 1.5
+local swordFill = Instance.new("Frame", swordBar)
+swordFill.Size = UDim2.new(1, 0, 1, 0)
+swordFill.BackgroundColor3 = Color3.fromRGB(255, 180, 40); swordFill.BorderSizePixel = 0
+Instance.new("UICorner", swordFill).CornerRadius = UDim.new(0, 6)
+local swordLbl = Instance.new("TextLabel", swordBar)
+swordLbl.Size = UDim2.new(1,0,1,0); swordLbl.BackgroundTransparency = 1
+swordLbl.Text = "⚔️ READY"; swordLbl.Font = Enum.Font.GothamBold; swordLbl.TextSize = 11
+swordLbl.TextColor3 = Color3.fromRGB(255,240,200)
+
+-- Show sword bar once sword is equipped
+local function updateSwordBar(ready)
+    swordBar.Visible = true
+    if ready then
+        swordFill.BackgroundColor3 = Color3.fromRGB(255,180,40)
+        TweenService:Create(swordFill, TweenInfo.new(0.2), {Size = UDim2.new(1,0,1,0)}):Play()
+        swordLbl.Text = "⚔️ READY  (click to swing)"
+    else
+        swordFill.BackgroundColor3 = Color3.fromRGB(120, 40, 0)
+        TweenService:Create(swordFill, TweenInfo.new(1.2, Enum.EasingStyle.Linear),
+            {Size = UDim2.new(0, 0, 1, 0)}):Play()
+        swordLbl.Text = "⚔️ Cooldown..."
+        task.delay(1.2, function()
+            updateSwordBar(true)
+        end)
+    end
+end
+
+-- Listen for sword equip
+local function watchSword(char)
+    if not char then return end
+    local function bind(tool)
+        if tool:IsA("Tool") and tool.Name == "CoinSword" then
+            swordBar.Visible = true
+            tool.Activated:Connect(function() updateSwordBar(false) end)
+            tool.Unequipped:Connect(function() swordBar.Visible = false end)
+        end
+    end
+    for _, t in ipairs(char:GetChildren()) do bind(t) end
+    char.ChildAdded:Connect(bind)
+end
+if player.Character then watchSword(player.Character) end
+player.CharacterAdded:Connect(watchSword)
+
+-- ── GEYSER INDICATOR BAR ─────────────────────────────────
 local GEYSER_COUNT = 5
 local geyserBar = Instance.new("Frame", sg)
 geyserBar.Size            = UDim2.new(0, 252, 0, 26)
-geyserBar.Position        = UDim2.new(0.5, -126, 0, 72)
+geyserBar.Position        = UDim2.new(0.5, -126, 0, 98)
 geyserBar.BackgroundColor3= Color3.fromRGB(8,8,18)
 geyserBar.BorderSizePixel = 0
 Instance.new("UICorner", geyserBar).CornerRadius = UDim.new(0,8)
@@ -165,10 +250,9 @@ local function setGeyserDot(idx, active, isMega)
     end
 end
 
--- Countdown timers (must match MapBuilder GEYSER_ACTIVE / GEYSER_INACTIVE)
 local GEYSER_ACTIVE_TIME   = 8
 local GEYSER_INACTIVE_TIME = 14
-local geyserCountdown = {}   -- [i] = {remaining, isActive}
+local geyserCountdown = {}
 
 RunService.Heartbeat:Connect(function(dt)
     for i = 1, GEYSER_COUNT do
@@ -201,51 +285,235 @@ end)
 
 -- ── PLOT INCOME COUNTDOWN BAR ─────────────────────────────
 local plotBar = Instance.new("Frame", sg)
-plotBar.Size = UDim2.new(0, 210, 0, 22); plotBar.Position = UDim2.new(0.5, -105, 0, 104)
+plotBar.Size = UDim2.new(0, 240, 0, 22); plotBar.Position = UDim2.new(0.5, -120, 0, 130)
 plotBar.BackgroundColor3 = Color3.fromRGB(8,18,8); plotBar.BorderSizePixel = 0
 plotBar.Visible = false
 Instance.new("UICorner", plotBar).CornerRadius = UDim.new(0, 8)
 local plotTickLbl = Instance.new("TextLabel", plotBar)
 plotTickLbl.Size = UDim2.new(1,0,1,0); plotTickLbl.BackgroundTransparency = 1
 plotTickLbl.TextColor3 = Color3.fromRGB(100, 220, 120)
-plotTickLbl.Font = Enum.Font.GothamBold; plotTickLbl.TextSize = 11
+plotTickLbl.Font = Enum.Font.GothamBold; plotTickLbl.TextSize = 12
 plotTickLbl.Text = "📈 earning..."
 
-local plotTickCd        = 30
+local plotTickCd        = 8
 local plotTickRemaining = 0
 local plotHasPlots      = false
 
--- ── RAID PROGRESS BAR ────────────────────────────────────────
+-- ── RAID BAR (BIG) ───────────────────────────────────────
 local raidBar = Instance.new("Frame", sg)
-raidBar.Size = UDim2.new(0, 280, 0, 30); raidBar.Position = UDim2.new(0.5, -140, 0, 130)
-raidBar.BackgroundColor3 = Color3.fromRGB(35, 5, 5); raidBar.BorderSizePixel = 0
+raidBar.Size = UDim2.new(0, 340, 0, 48); raidBar.Position = UDim2.new(0.5, -170, 0, 158)
+raidBar.BackgroundColor3 = Color3.fromRGB(40, 5, 5); raidBar.BorderSizePixel = 0
 raidBar.Visible = false
-Instance.new("UICorner", raidBar).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", raidBar).CornerRadius = UDim.new(0, 10)
 local raidStroke = Instance.new("UIStroke", raidBar)
-raidStroke.Color = Color3.fromRGB(220, 40, 40); raidStroke.Thickness = 1.5
+raidStroke.Color = Color3.fromRGB(255, 40, 40); raidStroke.Thickness = 2.5
 
 local raidFill = Instance.new("Frame", raidBar)
-raidFill.Size = UDim2.new(0, 0, 1, 0); raidFill.BackgroundColor3 = Color3.fromRGB(200, 30, 30)
+raidFill.Size = UDim2.new(0, 0, 1, 0); raidFill.BackgroundColor3 = Color3.fromRGB(220, 30, 30)
 raidFill.BorderSizePixel = 0
-Instance.new("UICorner", raidFill).CornerRadius = UDim.new(0, 8)
+Instance.new("UICorner", raidFill).CornerRadius = UDim.new(0, 10)
 
 local raidLbl = Instance.new("TextLabel", raidBar)
-raidLbl.Size = UDim2.new(1, 0, 1, 0); raidLbl.BackgroundTransparency = 1
-raidLbl.TextColor3 = Color3.fromRGB(255, 190, 190)
-raidLbl.Font = Enum.Font.GothamBold; raidLbl.TextSize = 11
+raidLbl.Size = UDim2.new(1, 0, 0.55, 0); raidLbl.BackgroundTransparency = 1
+raidLbl.Position = UDim2.new(0, 0, 0, 0)
+raidLbl.TextColor3 = Color3.fromRGB(255, 210, 210)
+raidLbl.Font = Enum.Font.GothamBold; raidLbl.TextSize = 14
 raidLbl.Text = "⚔️ Raiding..."
 
-RE_RaidStatus.OnClientEvent:Connect(function(plotId, ownerName, progress)
-    if progress < 0 then
+local raidSubLbl = Instance.new("TextLabel", raidBar)
+raidSubLbl.Size = UDim2.new(1, 0, 0.45, 0); raidSubLbl.BackgroundTransparency = 1
+raidSubLbl.Position = UDim2.new(0, 0, 0.55, 0)
+raidSubLbl.TextColor3 = Color3.fromRGB(200, 140, 140)
+raidSubLbl.Font = Enum.Font.Gotham; raidSubLbl.TextSize = 11
+raidSubLbl.Text = "Stand on the plot to steal it"
+
+-- ── RAID DEFENDER ALERT ──────────────────────────────────
+-- Shows when the player is the one being raided
+local defenseAlert = Instance.new("Frame", sg)
+defenseAlert.Size = UDim2.new(0, 400, 0, 70); defenseAlert.Position = UDim2.new(0.5, -200, 0.15, 0)
+defenseAlert.BackgroundColor3 = Color3.fromRGB(60, 0, 0); defenseAlert.BorderSizePixel = 0
+defenseAlert.Visible = false
+Instance.new("UICorner", defenseAlert).CornerRadius = UDim.new(0, 12)
+local defStroke = Instance.new("UIStroke", defenseAlert)
+defStroke.Color = Color3.fromRGB(255, 40, 40); defStroke.Thickness = 3
+
+local defLbl1 = Instance.new("TextLabel", defenseAlert)
+defLbl1.Size = UDim2.new(1, -12, 0, 36); defLbl1.Position = UDim2.new(0, 6, 0, 4)
+defLbl1.BackgroundTransparency = 1
+defLbl1.Text = "🚨 YOUR MACHINE IS BEING RAIDED!"
+defLbl1.TextColor3 = Color3.fromRGB(255, 80, 80)
+defLbl1.Font = Enum.Font.GothamBold; defLbl1.TextSize = 18
+defLbl1.TextXAlignment = Enum.TextXAlignment.Center
+
+local defLbl2 = Instance.new("TextLabel", defenseAlert)
+defLbl2.Size = UDim2.new(1, -12, 0, 26); defLbl2.Position = UDim2.new(0, 6, 0, 38)
+defLbl2.BackgroundTransparency = 1
+defLbl2.Text = "🏃 Run back and STAND ON YOUR MACHINE to defend!"
+defLbl2.TextColor3 = Color3.fromRGB(255, 200, 80)
+defLbl2.Font = Enum.Font.GothamBold; defLbl2.TextSize = 12
+defLbl2.TextXAlignment = Enum.TextXAlignment.Center
+
+-- Pulse the defense alert
+local defenseAlertThread = nil
+local function showDefenseAlert(raiderName, plotId)
+    defLbl1.Text = "🚨 " .. raiderName .. " IS RAIDING " .. plotId .. "!"
+    defenseAlert.Visible = true
+    SFX.raidAlert:Play()
+    if defenseAlertThread then task.cancel(defenseAlertThread) end
+    -- Pulse border color
+    task.spawn(function()
+        for _ = 1, 6 do
+            TweenService:Create(defStroke, TweenInfo.new(0.25), {Color = Color3.fromRGB(255,255,60)}):Play()
+            task.wait(0.25)
+            TweenService:Create(defStroke, TweenInfo.new(0.25), {Color = Color3.fromRGB(255,40,40)}):Play()
+            task.wait(0.25)
+        end
+    end)
+    defenseAlertThread = task.delay(8, function()
+        TweenService:Create(defenseAlert, TweenInfo.new(0.4), {Size = UDim2.new(0,400,0,0)}):Play()
+        task.wait(0.45)
+        defenseAlert.Visible = false
+        defenseAlert.Size = UDim2.new(0,400,0,70)
+    end)
+end
+
+-- ── RED VIGNETTE (shows when raiding) ────────────────────
+local vignette = Instance.new("Frame", sg)
+vignette.Name = "RaidVignette"; vignette.Size = UDim2.new(1,0,1,0)
+vignette.Position = UDim2.new(0,0,0,0); vignette.BackgroundTransparency = 1
+vignette.BackgroundColor3 = Color3.fromRGB(200, 0, 0)
+vignette.BorderSizePixel = 0; vignette.ZIndex = 0; vignette.Visible = false
+-- Gradient from edges inward
+local vigGrad = Instance.new("UIGradient", vignette)
+vigGrad.Transparency = NumberSequence.new({
+    NumberSequenceKeypoint.new(0, 0.4),
+    NumberSequenceKeypoint.new(0.5, 1),
+    NumberSequenceKeypoint.new(1, 0.4),
+})
+local vignetteActive = false
+local vignetteThread = nil
+
+local function startVignette()
+    if vignetteActive then return end
+    vignetteActive = true
+    vignette.Visible = true
+    task.spawn(function()
+        while vignetteActive do
+            TweenService:Create(vignette, TweenInfo.new(0.4, Enum.EasingStyle.Sine),
+                {BackgroundTransparency = 0.55}):Play()
+            task.wait(0.4)
+            if not vignetteActive then break end
+            TweenService:Create(vignette, TweenInfo.new(0.4, Enum.EasingStyle.Sine),
+                {BackgroundTransparency = 0.8}):Play()
+            task.wait(0.4)
+        end
+        TweenService:Create(vignette, TweenInfo.new(0.5), {BackgroundTransparency = 1}):Play()
+        task.wait(0.55)
+        vignette.Visible = false
+        vignette.BackgroundTransparency = 1
+    end)
+end
+
+local function stopVignette()
+    vignetteActive = false
+end
+
+-- ── MACHINE INCOME ANIMATION ─────────────────────────────
+-- When a plot ticks, spawn a floating "+coins" text in 3D world space above the machine.
+local function showMachineIncome(worldPos, coinsEarned)
+    local part = Instance.new("Part")
+    part.Anchored = true; part.CanCollide = false
+    part.Transparency = 1; part.Size = Vector3.new(1,1,1)
+    part.Position = worldPos + Vector3.new(math.random(-2,2), 8, math.random(-2,2))
+    part.Parent = workspace
+
+    local bb = Instance.new("BillboardGui", part)
+    bb.Size = UDim2.new(0,120,0,40); bb.MaxDistance = 60
+    bb.StudsOffset = Vector3.new(0, 0, 0)
+
+    local lbl = Instance.new("TextLabel", bb)
+    lbl.Size = UDim2.new(1,0,1,0); lbl.BackgroundTransparency = 1
+    lbl.Text = "💰 +"..fmt(coinsEarned)
+    lbl.TextColor3 = Color3.fromRGB(255,235,80)
+    lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 20
+    lbl.TextStrokeTransparency = 0.2; lbl.TextStrokeColor3 = Color3.new(0,0,0)
+
+    TweenService:Create(part,
+        TweenInfo.new(1.2, Enum.EasingStyle.Quad, Enum.EasingDirection.Out),
+        {Position = part.Position + Vector3.new(0, 6, 0)}):Play()
+    TweenService:Create(lbl,
+        TweenInfo.new(0.6, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
+        {TextTransparency = 1, TextStrokeTransparency = 1}):Play()
+
+    game:GetService("Debris"):AddItem(part, 1.4)
+end
+
+-- Machine rate billboard (floating in 3D above the machine showing income/s)
+local machineRateParts = {}  -- [plotId] = Part
+
+local function updateMachineRateBB(plotId, coinVal, cd)
+    machineRates[plotId] = {coinVal=coinVal, cd=cd}
+
+    -- Remove old billboard if exists
+    if machineRateParts[plotId] then
+        pcall(function() machineRateParts[plotId]:Destroy() end)
+        machineRateParts[plotId] = nil
+    end
+
+    local pos = PLOT_CENTERS_CLIENT[plotId]
+    if not pos then return end
+
+    local part = Instance.new("Part")
+    part.Anchored = true; part.CanCollide = false; part.Transparency = 1
+    part.Size = Vector3.new(1,1,1)
+    part.CFrame = CFrame.new(pos.X, pos.Y + 5, pos.Z)
+    part.Parent = workspace
+
+    local bb = Instance.new("BillboardGui", part)
+    bb.Size = UDim2.new(0,200,0,48); bb.MaxDistance = 50
+    bb.StudsOffset = Vector3.new(0,0,0)
+
+    local lbl = Instance.new("TextLabel", bb)
+    lbl.Size = UDim2.new(1,0,0.55,0); lbl.BackgroundTransparency = 1
+    local perMin = math.floor(coinVal * (60/cd))
+    lbl.Text = "⚡ +"..fmt(coinVal).." every "..cd.."s"
+    lbl.TextColor3 = Color3.fromRGB(180,255,160)
+    lbl.Font = Enum.Font.GothamBold; lbl.TextSize = 14
+    lbl.TextXAlignment = Enum.TextXAlignment.Center
+
+    local lbl2 = Instance.new("TextLabel", bb)
+    lbl2.Size = UDim2.new(1,0,0.45,0); lbl2.Position = UDim2.new(0,0,0.55,0)
+    lbl2.BackgroundTransparency = 1
+    lbl2.Text = "≈ "..fmt(perMin).." /min"
+    lbl2.TextColor3 = Color3.fromRGB(140,220,140)
+    lbl2.Font = Enum.Font.Gotham; lbl2.TextSize = 11
+    lbl2.TextXAlignment = Enum.TextXAlignment.Center
+
+    machineRateParts[plotId] = part
+end
+
+RE_MachineRate.OnClientEvent:Connect(function(plotId, coinVal, cd)
+    updateMachineRateBB(plotId, coinVal, cd)
+end)
+
+-- Raid status → for raider: show progress. Code -99 = defender alert.
+RE_RaidStatus.OnClientEvent:Connect(function(plotId, ownerOrRaiderName, progress)
+    if progress == -99 then
+        -- We are the OWNER being raided
+        showDefenseAlert(ownerOrRaiderName, plotId)
+    elseif progress < 0 then
         raidBar.Visible = false
+        stopVignette()
     else
         raidBar.Visible = true
+        startVignette()
         TweenService:Create(raidFill, TweenInfo.new(0.3), {Size = UDim2.new(math.clamp(progress, 0, 1), 0, 1, 0)}):Play()
-        raidLbl.Text = "⚔️ Raiding " .. ownerName .. "!  " .. math.floor(progress * 100) .. "%"
+        raidLbl.Text   = "⚔️ Raiding " .. ownerOrRaiderName .. "!  " .. math.floor(progress * 100) .. "%"
+        raidSubLbl.Text = "Stay on the plot — " .. math.ceil((1-progress)*5) .. "s to steal!"
     end
 end)
 
-RE_PlotTick.OnClientEvent:Connect(function(earned, cd)
+RE_PlotTick.OnClientEvent:Connect(function(earned, cd, ticked, coinPerPlot)
     plotTickCd        = cd
     plotTickRemaining = cd
     plotBar.Visible   = true
@@ -255,11 +523,20 @@ RE_PlotTick.OnClientEvent:Connect(function(earned, cd)
             plotTickLbl.Text = "📈 income in " .. math.ceil(plotTickRemaining) .. "s"
         end
     end)
+
+    -- 3D income animations above each ticked machine
+    if ticked then
+        for _, plotId in ipairs(ticked) do
+            local pos = PLOT_CENTERS_CLIENT[plotId]
+            if pos then
+                showMachineIncome(pos, coinPerPlot or (earned / math.max(1,#ticked)))
+            end
+        end
+    end
 end)
 
 -- ── SIDE BUTTONS ─────────────────────────────────────────
 local btnFrame = Instance.new("Frame",sg)
--- 5 buttons × 52px + 4 gaps × 8px = 292px
 btnFrame.Size=UDim2.new(0,60,0,292); btnFrame.AnchorPoint=Vector2.new(1,0.5)
 btnFrame.Position=UDim2.new(1,-8,0.5,0); btnFrame.BackgroundTransparency=1
 local btnLayout=Instance.new("UIListLayout",btnFrame)
@@ -370,7 +647,6 @@ end
 
 RE_NotifyPlayer.OnClientEvent:Connect(function(title,body,col)
     showToast(title,body,col)
-    -- Play sounds based on notification type
     if title:find("JACKPOT") or title:find("RARE") then
         SFX.jackpot:Play()
     elseif title:find("💰") and not title:find("MEGA") then
@@ -381,20 +657,18 @@ RE_NotifyPlayer.OnClientEvent:Connect(function(title,body,col)
         SFX.prestige:Play()
     elseif title:find("MEGA BURST") then
         SFX.megaBurst:Play()
+    elseif title:find("Hit!") or title:find("Struck!") then
+        SFX.swordHit:Play()
+    elseif title:find("RAID") or title:find("Stolen") then
+        SFX.raidAlert:Play()
     end
 end)
 
 -- ============================================================
 -- HUD UPDATE
 -- ============================================================
-local function fmt(n)
-    if n>=1e9 then return string.format("%.1fB",n/1e9)
-    elseif n>=1e6 then return string.format("%.1fM",n/1e6)
-    elseif n>=1e3 then return string.format("%.1fK",n/1e3)
-    else return tostring(math.floor(n)) end
-end
 
--- ── PRESTIGE THEMES (client-side lighting + HUD tint) ────────
+-- ── PRESTIGE THEMES ──────────────────────────────────────
 local PRESTIGE_THEMES = {
     [0]={tint=Color3.new(1,1,1),              sat=0,    bright=0,     stroke=Color3.fromRGB(255,200,0),  rcol=Color3.fromRGB(255,120,0)},
     [1]={tint=Color3.fromRGB(255,235,180),    sat=0.12, bright=0.04,  stroke=Color3.fromRGB(255,210,80), rcol=Color3.fromRGB(255,190,50)},
@@ -417,19 +691,19 @@ local function applyPrestigeTheme(rebirths)
     TweenService:Create(rebirthLbl, TweenInfo.new(0.6), {TextColor3 = t.rcol}):Play()
 end
 
-local PRESTIGE_BASE_COST = 10000
+-- New prestige cost: 3000 × 2^rebirths
+local PRESTIGE_BASE_COST = 3000
 local function updateHUD(data)
     coinLbl.Text    = "💰 "..fmt(data.coins or 0)
     rebirthLbl.Text = "🔥 x"..(data.rebirths or 0)
     applyPrestigeTheme(data.rebirths or 0)
-    -- Prestige progress bar (cost = 10000 × 3^rebirths, matches server)
-    local cost = PRESTIGE_BASE_COST * (3 ^ (data.rebirths or 0))
+    local cost = PRESTIGE_BASE_COST * (2 ^ (data.rebirths or 0))
     local pct  = math.min(1, (data.coins or 0) / cost)
     TweenService:Create(pBarFill, TweenInfo.new(0.5, Enum.EasingStyle.Quad),
         {Size = UDim2.new(pct, 0, 1, 0)}):Play()
     pBarFill.BackgroundColor3 = pct >= 1
-        and Color3.fromRGB(255, 215, 0)   -- gold = ready to prestige
-        or  Color3.fromRGB(255, 100, 0)   -- orange = in progress
+        and Color3.fromRGB(255, 215, 0)
+        or  Color3.fromRGB(255, 100, 0)
 end
 
 -- ============================================================
@@ -470,10 +744,9 @@ local function buildShop(data,upgrades)
         lvlTxt.Font=Enum.Font.GothamBold; lvlTxt.TextSize=12
         lvlTxt.TextXAlignment=Enum.TextXAlignment.Left
 
-        -- current effect value (includes gamepass bonuses where relevant)
         local effectText
         if upg.key=="touchSpeed" then
-            effectText = "Now: "..(math.max(1,30-level)).."s recharge"
+            effectText = "Now: "..(math.max(1,8-level)).."s recharge"
         elseif upg.key=="coinMagnet" then
             if not gp.megaMagnet then
                 effectText = "🔒 Requires Mega Magnet gamepass"
@@ -566,7 +839,6 @@ local function openDaily()
     info.TextColor3 = Color3.fromRGB(160,160,190); info.Font = Enum.Font.Gotham; info.TextSize = 12
     info.TextWrapped = true; info.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- Reward strip
     local strip = Instance.new("Frame", panel); strip.Size = UDim2.new(1,-20,0,58)
     strip.Position = UDim2.new(0,10,0,92); strip.BackgroundTransparency = 1
     local rl = Instance.new("UIListLayout", strip)
@@ -607,7 +879,8 @@ local function openPrestige()
 
     local gp       = (currentData and currentData._gp) or {}
     local rebirths = (currentData and currentData.rebirths) or 0
-    local cost     = math.floor(10000*(3^rebirths))
+    -- New cost: 3000 × 2^rebirths
+    local cost     = math.floor(3000 * (2 ^ rebirths))
     local coins    = (currentData and currentData.coins) or 0
     local canDo    = coins >= cost
     local multStr  = gp.prestigeBoost and "3x" or "2x"
@@ -615,8 +888,23 @@ local function openPrestige()
     local curPow  = math.floor((gp.prestigeBoost and 3 or 2) ^ rebirths)
     local nextPow = math.floor((gp.prestigeBoost and 3 or 2) ^ (rebirths + 1))
 
+    -- What upgrades the player currently has and would keep 25%
+    local upgStr = ""
+    if currentData and currentData.upgrades then
+        local parts = {}
+        for key, lvl in pairs(currentData.upgrades) do
+            local kept = math.floor(lvl * 0.25)
+            if kept > 0 then
+                table.insert(parts, key.."("..lvl.."→"..kept..")")
+            end
+        end
+        if #parts > 0 then
+            upgStr = "\n🎁 Keeping 25%% of upgrades: "..table.concat(parts,", ")
+        end
+    end
+
     local panel=Instance.new("Frame",sg); panel.Name="PrestigePanel"
-    panel.Size=UDim2.new(0,340,0,200); panel.Position=UDim2.new(0.5,-170,0.5,-100)
+    panel.Size=UDim2.new(0,360,0,230); panel.Position=UDim2.new(0.5,-180,0.5,-115)
     panel.BackgroundColor3=Color3.fromRGB(10,8,22); panel.BorderSizePixel=0
     Instance.new("UICorner",panel).CornerRadius=UDim.new(0,14)
     local ps=Instance.new("UIStroke",panel); ps.Color=Color3.fromRGB(255,80,0); ps.Thickness=2
@@ -632,17 +920,19 @@ local function openPrestige()
     Instance.new("UICorner",cl).CornerRadius=UDim.new(0,8)
     cl.MouseButton1Click:Connect(function() panel:Destroy() end)
 
-    local info=Instance.new("TextLabel",panel); info.Size=UDim2.new(1,-20,0,82)
+    local info=Instance.new("TextLabel",panel); info.Size=UDim2.new(1,-20,0,110)
     info.Position=UDim2.new(0,10,0,48); info.BackgroundTransparency=1
-    info.Text="Resets coins & upgrades — keeps prestige level.\n"
-        .."Each prestige gives a permanent "..multStr.." income multiplier.\n\n"
-        .."Power now:  ×"..curPow.."  →  After prestige:  ×"..nextPow.."\n"
+    info.Text="Resets coins & most upgrades — keeps prestige level.\n"
+        .."Each prestige gives a permanent "..multStr.." income multiplier.\n"
+        .."You also KEEP 25%% of all your upgrade levels!\n\n"
+        .."Income now:  ×"..curPow.."  →  After prestige:  ×"..nextPow.."\n"
         .."Cost: 💰 "..fmt(cost).."    You have: 💰 "..fmt(coins)
+        ..upgStr
     info.TextColor3=Color3.fromRGB(180,180,200); info.Font=Enum.Font.Gotham; info.TextSize=13
     info.TextWrapped=true; info.TextXAlignment=Enum.TextXAlignment.Left
 
     local btn=Instance.new("TextButton",panel); btn.Size=UDim2.new(1,-20,0,44)
-    btn.Position=UDim2.new(0,10,0,142)
+    btn.Position=UDim2.new(0,10,0,174)
     btn.BackgroundColor3=canDo and Color3.fromRGB(200,55,0) or Color3.fromRGB(55,30,20)
     btn.Text=canDo and "🔥 Prestige Now!" or ("❌ Need 💰 "..fmt(cost).." coins")
     btn.TextColor3=Color3.new(1,1,1); btn.Font=Enum.Font.GothamBold; btn.TextSize=15
@@ -653,7 +943,7 @@ local function openPrestige()
         btn.MouseButton1Click:Connect(function()
             if not confirming then
                 confirming = true
-                btn.Text = "⚠️ Confirm? Plots reset! (click again)"
+                btn.Text = "⚠️ Confirm? (click again to prestige)"
                 btn.BackgroundColor3 = Color3.fromRGB(220,100,0)
                 if confirmThread then task.cancel(confirmThread) end
                 confirmThread = task.delay(3, function()
@@ -665,6 +955,12 @@ local function openPrestige()
                 if confirmThread then task.cancel(confirmThread) end
                 RE_Rebirth:FireServer()
                 panel:Destroy()
+                -- Remove machine rate billboards on prestige
+                for plotId, part in pairs(machineRateParts) do
+                    pcall(function() part:Destroy() end)
+                end
+                machineRateParts = {}
+                machineRates     = {}
             end
         end)
     end
@@ -682,7 +978,7 @@ local PASSES={
     {id=1821659972, gpKey="luckyCharm",    label="🍀 Lucky Charm — 2x jackpot chance",    price="R$199"},
     {id=1822655551, gpKey="speedDemon",    label="⚡ Speed Demon — +20% walk speed",      price="R$199"},
     {id=1822649609, gpKey="prestigeBoost", label="🏆 Prestige Boost — 3x per prestige",   price="R$349"},
-    {id=1823064828, gpKey="autoFarm",      label="🤖 Auto Farm — auto-collect every 45s", price="R$699"},
+    {id=1823064828, gpKey="autoFarm",      label="🤖 Auto Farm — 2x plot tick speed",     price="R$699"},
 }
 
 local function openRobuxShop()
@@ -779,7 +1075,6 @@ local function openStats()
     ttl.Text = "📊 YOUR STATS"; ttl.TextColor3 = Color3.fromRGB(80,200,255)
     ttl.Font = Enum.Font.GothamBold; ttl.TextSize = 20; ttl.TextXAlignment = Enum.TextXAlignment.Left
 
-    -- Compute stats
     local plotCount = 0
     for _ in pairs(data.ownedPlots or {}) do plotCount = plotCount + 1 end
 
@@ -792,10 +1087,9 @@ local function openStats()
                   * (gp.doubleCoin and 2 or 1)
                   * ((gp.prestigeBoost and 3 or 2) ^ (data.rebirths or 0))
                   * (1 + 0.1 * math.min(streak, 5))
-    local coinVal = math.floor(5 * mult)
-    local cd  = math.max(1, 30 - ((data.upgrades and data.upgrades.touchSpeed) or 0))
+    local coinVal = math.floor(30 * mult)
+    local cd  = math.max(1, 8 - ((data.upgrades and data.upgrades.touchSpeed) or 0))
     if gp.autoFarm then cd = math.max(1, math.floor(cd/2)) end
-    -- Plot income: each owned plot ticks every cd seconds
     local plotIncome = plotCount > 0 and math.floor(plotCount * coinVal * (60/cd)) or 0
 
     local stats = {
@@ -806,6 +1100,7 @@ local function openStats()
         {"⏱  Play Time",        timeStr},
         {"📈 Plot Income/min",   plotCount>0 and "~"..fmt(plotIncome) or "Buy plots!"},
         {"💎 Coin Value",        fmt(coinVal).." ea"},
+        {"⚔️ Prestige Cost",     fmt(math.floor(3000 * (2 ^ (data.rebirths or 0))))},
     }
     if gp.autoFarm then table.insert(stats, {"🤖 Auto Farm", "2× plot speed"}) end
 
@@ -827,7 +1122,6 @@ local function openStats()
         vl.Font = Enum.Font.GothamBold; vl.TextSize = 13; vl.TextXAlignment = Enum.TextXAlignment.Right
     end
 
-    -- Live server ranking
     local ranking = data._ranking
     local baseH   = 48 + #stats*(rowH+4) + 8
     if ranking and #ranking > 1 then
@@ -875,7 +1169,7 @@ makeBtn("🔥", Color3.fromRGB(160,55,0),   openPrestige)
 makeBtn("💎", Color3.fromRGB(18,75,170),  openRobuxShop)
 makeBtn("📊", Color3.fromRGB(0,90,160),   openStats)
 
--- ── ShowShop remote → opens upgrade shop ─────────────────
+-- ── ShowShop remote ───────────────────────────────────────
 RE_ShowShop.OnClientEvent:Connect(function()
     shopOpen = true
     shopPanel.Visible = true
@@ -892,7 +1186,6 @@ RE_UpdateStats.OnClientEvent:Connect(function(data, upgrades)
     upgradesDef = upgrades
     updateHUD(data)
     if shopOpen then buildShop(data, upgrades) end
-    -- Plot countdown bar
     local plotCount = 0
     if data.ownedPlots then
         for _, v in pairs(data.ownedPlots) do if v then plotCount += 1 end end
@@ -901,10 +1194,19 @@ RE_UpdateStats.OnClientEvent:Connect(function(data, upgrades)
     plotBar.Visible = plotHasPlots
     if plotHasPlots and plotTickRemaining <= 0 then
         local tsLvl = (data.upgrades and data.upgrades.touchSpeed) or 0
-        plotTickCd        = math.max(1, 30 - tsLvl)
+        plotTickCd        = math.max(1, 8 - tsLvl)
         plotTickRemaining = plotTickCd
     end
-    -- Rank badge + overtake notification
+
+    -- Clear machine rate BBs for plots no longer owned (e.g. after prestige/raid)
+    for plotId, part in pairs(machineRateParts) do
+        if not (data.ownedPlots and data.ownedPlots[plotId]) then
+            pcall(function() part:Destroy() end)
+            machineRateParts[plotId] = nil
+            machineRates[plotId]     = nil
+        end
+    end
+
     local ranking = data._ranking
     if ranking and #ranking > 0 then
         local myRank, aboveName = nil, nil
@@ -920,13 +1222,11 @@ RE_UpdateStats.OnClientEvent:Connect(function(data, upgrades)
             rankLbl.Text = "#"..myRank
             rankLbl.TextColor3 = podium[myRank] or Color3.fromRGB(180,180,200)
             rankBadge.BackgroundColor3 = myRank == 1 and Color3.fromRGB(60,45,0) or Color3.fromRGB(25,25,40)
-            -- "You overtook X!" when rank improves
             if prevRank and myRank < prevRank then
                 local bumped = ranking[myRank + 1]
                 showToast("📈 You overtook "..(bumped and bumped.name or "someone").."!",
                     "You're now #"..myRank.." on the server!", "green")
             end
-            -- "Closing in" warning — within 10% of the leader above you
             if aboveName then
                 local above = ranking[myRank - 1]
                 if above and above.coins > 0 then
@@ -945,21 +1245,21 @@ RE_UpdateStats.OnClientEvent:Connect(function(data, upgrades)
     end
 end)
 
--- ── Welcome toast (fires once on join) ───────────────────
+-- ── Welcome toasts ────────────────────────────────────────
 task.delay(2, function()
-    showToast("Welcome to Money Island!", "Grab geyser coins — no cap, collect as many as you can!", "gold")
+    showToast("Welcome to Money Island!", "Buy machines to earn coins automatically!", "gold")
     task.delay(3.5, function()
-        showToast("⚔️ Any plot is buyable!", "Walk up to any machine and click to buy it.", "green")
+        showToast("⚔️ You have a sword!", "Equip it and click to steal coins from others!", "red")
     end)
     task.delay(7, function()
-        showToast("🦹 PVP is live!", "Raid enemies' machines by standing on them. Defend yours!", "red")
+        showToast("🚨 Raid system!", "Stand on enemy machines to steal them. Defend yours by STANDING on your own machine!", "red")
     end)
     task.delay(11, function()
-        showToast("💸 Hot zone danger!", "Carrying coins in the geyser zone? Other players can pickpocket you!", "blue")
+        showToast("📈 Machine income!", "Golden floating text shows each machine earning. See rates in stats 📊", "green")
     end)
     task.delay(15, function()
         showToast("🎁 Daily Reward!", "Tap 🎁 on the right to claim it!", "blue")
     end)
 end)
 
-print("[MoneyIsland] ✅ ClientUI loaded!")
+print("[MoneyIsland] ✅ ClientUI v2 loaded!")
