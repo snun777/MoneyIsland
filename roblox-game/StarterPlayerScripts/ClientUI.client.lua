@@ -81,6 +81,15 @@ local PLOT_CENTERS_CLIENT = {
     RR_SS = Vector3.new( 100, 1,-100),
 }
 
+-- ── PLOT FRIENDLY NAMES ──────────────────────────────────
+local PLOT_NAMES = {
+    L_N="💸 Coin Printer", R_N="🤖 Roomba", L_S="🏭 Factory", R_S="🏦 Vault",
+    LL_M="🧲 Magnet", RR_M="⚗️ Alchemy Cauldron", C_NN="🎰 Slot Machine", C_SS="⚡ Tesla Coil",
+    LL_N="🔭 Observatory", LL_S="☢️ Reactor", RR_N="🚀 Rocket Silo", RR_S="💎 Crystal Forge",
+    L_NN="⏰ Clock Engine", R_NN="🌊 Wave Condenser", L_SS="🧬 DNA Tower", R_SS="💣 Coin Cannon",
+    LL_NN="⛏️ Mining Rig", RR_NN="🌋 Lava Core", LL_SS="🔮 Arcane Spire", RR_SS="🛸 UFO",
+}
+
 -- ── state ────────────────────────────────────────────────
 local currentData  = nil
 local upgradesDef  = nil
@@ -475,7 +484,7 @@ local function updateMachineRateBB(plotId, coinVal, cd)
     local part = Instance.new("Part")
     part.Anchored = true; part.CanCollide = false; part.Transparency = 1
     part.Size = Vector3.new(1,1,1)
-    part.CFrame = CFrame.new(pos.X, pos.Y + 5, pos.Z)
+    part.CFrame = CFrame.new(pos.X, pos.Y + 28, pos.Z)
     part.Parent = workspace
 
     local bb = Instance.new("BillboardGui", part)
@@ -774,14 +783,14 @@ local function buildWeaponShop(ownedWeapons, weaponLevels, equippedWeapon, coins
             btn.Text = w.cost == 0 and "FREE" or ("💰 " .. fmt(w.cost))
             btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
-            btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer("buy", w.id) end)
+            btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer(w.id, "buy") end)
         elseif equipped then
             if not maxed then
                 btn.BackgroundColor3 = coins >= upgCost and Color3.fromRGB(20,80,20) or Color3.fromRGB(25,40,25)
                 btn.Text = "⬆️ " .. fmt(upgCost)
                 btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12
                 Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
-                btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer("upgrade", w.id) end)
+                btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer(w.id, "upgrade") end)
             else
                 btn.BackgroundColor3 = Color3.fromRGB(20,50,20)
                 btn.Text = "MAX ✓"; btn.TextColor3 = Color3.fromRGB(0,210,80)
@@ -792,7 +801,7 @@ local function buildWeaponShop(ownedWeapons, weaponLevels, equippedWeapon, coins
             btn.BackgroundColor3 = Color3.fromRGB(20,60,70)
             btn.Text = "Equip"; btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 13
             Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
-            btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer("equip", w.id) end)
+            btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer(w.id, "equip") end)
         end
         total = total + 104
     end
@@ -872,7 +881,7 @@ local function buildUpgradePanel(data)
         Instance.new("UICorner", header).CornerRadius = UDim.new(0,6)
         local hl = Instance.new("TextLabel", header); hl.Size = UDim2.new(1,-10,1,0)
         hl.Position = UDim2.new(0,8,0,0); hl.BackgroundTransparency = 1
-        hl.Text = "🏗️ " .. plotId; hl.TextColor3 = Color3.fromRGB(255,200,100)
+        hl.Text = PLOT_NAMES[plotId] or ("🏗️ "..plotId); hl.TextColor3 = Color3.fromRGB(255,200,100)
         hl.Font = Enum.Font.GothamBold; hl.TextSize = 13; hl.TextXAlignment = Enum.TextXAlignment.Left
         total = total + 32
 
@@ -1098,8 +1107,8 @@ local function applyPrestigeTheme(rebirths)
     TweenService:Create(rebirthLbl, TweenInfo.new(0.6), {TextColor3 = t.rcol}):Play()
 end
 
--- New prestige cost: 3000 × 2^rebirths
-local PRESTIGE_BASE_COST = 3000
+-- New prestige cost: 75000 × 2^rebirths
+local PRESTIGE_BASE_COST = 75000
 local function updateHUD(data)
     coinLbl.Text    = "💰 "..fmt(data.coins or 0)
     rebirthLbl.Text = "🔥 x"..(data.rebirths or 0)

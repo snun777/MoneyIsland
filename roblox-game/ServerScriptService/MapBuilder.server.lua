@@ -245,30 +245,30 @@ local PLOT_DEFS = {
 	{id="R_M",  cx=COLS[4], cz=ROWS[3], contested=true},
 	{id="C_N",  cx=COLS[3], cz=ROWS[4], contested=true},
 	{id="C_S",  cx=COLS[3], cz=ROWS[2], contested=true},
-	-- ── OWNED PLOTS ring 1 (adjacent to contested, cost 2000) ──
-	{id="L_N",  cx=COLS[2], cz=ROWS[4], cost=2000,  color=Color3.fromRGB(80,255,120), label="2,000 Coins"},
-	{id="R_N",  cx=COLS[4], cz=ROWS[4], cost=2000,  color=Color3.fromRGB(80,255,120), label="2,000 Coins"},
-	{id="L_S",  cx=COLS[2], cz=ROWS[2], cost=2000,  color=Color3.fromRGB(80,255,120), label="2,000 Coins"},
-	{id="R_S",  cx=COLS[4], cz=ROWS[2], cost=2000,  color=Color3.fromRGB(80,255,120), label="2,000 Coins"},
-	-- ── OWNED PLOTS ring 2 (cost 10000) ──
-	{id="LL_M", cx=COLS[1], cz=ROWS[3], cost=10000, color=Color3.fromRGB(255,160,0),  label="10,000 Coins"},
-	{id="RR_M", cx=COLS[5], cz=ROWS[3], cost=10000, color=Color3.fromRGB(255,160,0),  label="10,000 Coins"},
-	{id="C_NN", cx=COLS[3], cz=ROWS[5], cost=10000, color=Color3.fromRGB(255,160,0),  label="10,000 Coins"},
-	{id="C_SS", cx=COLS[3], cz=ROWS[1], cost=10000, color=Color3.fromRGB(255,160,0),  label="10,000 Coins"},
-	-- ── OWNED PLOTS ring 3 (cost 25000) ──
-	{id="LL_N", cx=COLS[1], cz=ROWS[4], cost=25000, color=Color3.fromRGB(255,200,0),  label="25,000 Coins"},
-	{id="LL_S", cx=COLS[1], cz=ROWS[2], cost=25000, color=Color3.fromRGB(255,200,0),  label="25,000 Coins"},
-	{id="RR_N", cx=COLS[5], cz=ROWS[4], cost=25000, color=Color3.fromRGB(255,200,0),  label="25,000 Coins"},
-	{id="RR_S", cx=COLS[5], cz=ROWS[2], cost=25000, color=Color3.fromRGB(255,200,0),  label="25,000 Coins"},
-	{id="L_NN", cx=COLS[2], cz=ROWS[5], cost=25000, color=Color3.fromRGB(255,200,0),  label="25,000 Coins"},
-	{id="R_NN", cx=COLS[4], cz=ROWS[5], cost=25000, color=Color3.fromRGB(255,200,0),  label="25,000 Coins"},
-	{id="L_SS", cx=COLS[2], cz=ROWS[1], cost=25000, color=Color3.fromRGB(255,200,0),  label="25,000 Coins"},
-	{id="R_SS", cx=COLS[4], cz=ROWS[1], cost=25000, color=Color3.fromRGB(255,200,0),  label="25,000 Coins"},
-	-- ── OWNED PLOTS ring 4 corners (cost 50000) ──
-	{id="LL_NN",cx=COLS[1], cz=ROWS[5], cost=50000, color=Color3.fromRGB(220,80,255), label="50,000 Coins"},
-	{id="RR_NN",cx=COLS[5], cz=ROWS[5], cost=50000, color=Color3.fromRGB(220,80,255), label="50,000 Coins"},
-	{id="LL_SS",cx=COLS[1], cz=ROWS[1], cost=50000, color=Color3.fromRGB(220,80,255), label="50,000 Coins"},
-	{id="RR_SS",cx=COLS[5], cz=ROWS[1], cost=50000, color=Color3.fromRGB(220,80,255), label="50,000 Coins"},
+	-- ── OWNED PLOTS ring 1 (adjacent to contested, cost 4,000) ──
+	{id="L_N",  cx=COLS[2], cz=ROWS[4], cost=4000,   color=Color3.fromRGB(80,255,120), label="4,000 Coins"},
+	{id="R_N",  cx=COLS[4], cz=ROWS[4], cost=4000,   color=Color3.fromRGB(80,255,120), label="4,000 Coins"},
+	{id="L_S",  cx=COLS[2], cz=ROWS[2], cost=4000,   color=Color3.fromRGB(80,255,120), label="4,000 Coins"},
+	{id="R_S",  cx=COLS[4], cz=ROWS[2], cost=4000,   color=Color3.fromRGB(80,255,120), label="4,000 Coins"},
+	-- ── OWNED PLOTS ring 2 (cost 25,000) ──
+	{id="LL_M", cx=COLS[1], cz=ROWS[3], cost=25000,  color=Color3.fromRGB(255,160,0),  label="25,000 Coins"},
+	{id="RR_M", cx=COLS[5], cz=ROWS[3], cost=25000,  color=Color3.fromRGB(255,160,0),  label="25,000 Coins"},
+	{id="C_NN", cx=COLS[3], cz=ROWS[5], cost=25000,  color=Color3.fromRGB(255,160,0),  label="25,000 Coins"},
+	{id="C_SS", cx=COLS[3], cz=ROWS[1], cost=25000,  color=Color3.fromRGB(255,160,0),  label="25,000 Coins"},
+	-- ── OWNED PLOTS ring 3 (cost 75,000) ──
+	{id="LL_N", cx=COLS[1], cz=ROWS[4], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
+	{id="LL_S", cx=COLS[1], cz=ROWS[2], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
+	{id="RR_N", cx=COLS[5], cz=ROWS[4], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
+	{id="RR_S", cx=COLS[5], cz=ROWS[2], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
+	{id="L_NN", cx=COLS[2], cz=ROWS[5], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
+	{id="R_NN", cx=COLS[4], cz=ROWS[5], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
+	{id="L_SS", cx=COLS[2], cz=ROWS[1], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
+	{id="R_SS", cx=COLS[4], cz=ROWS[1], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
+	-- ── OWNED PLOTS ring 4 corners (cost 200,000) ──
+	{id="LL_NN",cx=COLS[1], cz=ROWS[5], cost=200000, color=Color3.fromRGB(220,80,255), label="200,000 Coins"},
+	{id="RR_NN",cx=COLS[5], cz=ROWS[5], cost=200000, color=Color3.fromRGB(220,80,255), label="200,000 Coins"},
+	{id="LL_SS",cx=COLS[1], cz=ROWS[1], cost=200000, color=Color3.fromRGB(220,80,255), label="200,000 Coins"},
+	{id="RR_SS",cx=COLS[5], cz=ROWS[1], cost=200000, color=Color3.fromRGB(220,80,255), label="200,000 Coins"},
 }
 
 -- Floor color tiers for owned plots
@@ -498,7 +498,7 @@ local function buildFactory(cx, cz, f)
 		pos=Vector3.new(cx+8.2,Y+7.5,cz),
 		col=Color3.fromRGB(255,200,0),mat=Enum.Material.Neon,cc=false,shadow=false})
 	addLight(body, 4, 34, Color3.fromRGB(255,190,60))
-	makeBillboard(body,"🏭 COIN FACTORY",Color3.fromRGB(255,190,60),14,220,46,90)
+	makeBillboard(body,"🏭 COIN FACTORY",Color3.fromRGB(255,190,60),26,220,46,90)
 end
 
 -- Tier 50,000: 🏛️ Coin Vault
@@ -555,7 +555,7 @@ local function buildMagnet(cx, cz, f)
 	local orbCoin = CYL({name="M",par=f,sz=Vector3.new(0.5,3.5,3.5),cf=CFrame.new(cx+10,Y+7,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,215,0),mat=Enum.Material.Neon,cc=false,shadow=false})
 	spinWorldY(orbCoin, cx, Y+7, cz, 3.5)
 	addLight(base, 3.5, 28, Color3.fromRGB(255,120,120))
-	makeBillboard(base,"🧲 COIN MAGNET",Color3.fromRGB(255,120,120),11,220,46,85)
+	makeBillboard(base,"🧲 COIN MAGNET",Color3.fromRGB(255,120,120),20,220,46,85)
 end
 
 -- R_N: ⚗️ Alchemy Cauldron
@@ -613,7 +613,7 @@ local function buildTeslaCoil(cx, cz, f)
 		bob(arc,cx+math.cos(a)*r,Y+17,cz+math.sin(a)*r,1.5,0.12+i*0.04)
 	end
 	addLight(top,6,40,Color3.fromRGB(150,200,255))
-	makeBillboard(base,"⚡ TESLA COIL",Color3.fromRGB(180,220,255),18,220,46,85)
+	makeBillboard(base,"⚡ TESLA COIL",Color3.fromRGB(180,220,255),24,220,46,85)
 end
 
 -- C_NN: 🔭 Observatory
@@ -630,7 +630,7 @@ local function buildObservatory(cx, cz, f)
 	CYL({name="M",par=f,sz=Vector3.new(1,2.2,2.2),cf=CFrame.new(cx,Y+17,cz-1)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(120,180,255),mat=Enum.Material.Neon,cc=false,shadow=false})
 	spinWorldY(scope, cx, Y+13, cz+2, 0.4, CFrame.Angles(math.rad(20),0,0))
 	addLight(plat,3,30,Color3.fromRGB(120,160,255))
-	makeBillboard(plat,"🔭 OBSERVATORY",Color3.fromRGB(140,180,255),14,220,46,85)
+	makeBillboard(plat,"🔭 OBSERVATORY",Color3.fromRGB(140,180,255),22,220,46,85)
 end
 
 -- C_SS: 🧪 Chemical Reactor
@@ -666,7 +666,7 @@ local function buildRocketSilo(cx, cz, f)
 	bob(exhaust,cx,Y+4,cz,1.2,0.1,CFrame.Angles(0,0,math.rad(90)))
 	local body=P({name="M",par=f,sz=Vector3.new(1,1,1),pos=Vector3.new(cx,Y+14,cz),col=Color3.fromRGB(0,0,0),tr=1,cc=false,par=f})
 	addLight(body,5,38,Color3.fromRGB(255,120,0))
-	makeBillboard(exhaust,"🚀 ROCKET SILO",Color3.fromRGB(255,180,80),18,220,46,90)
+	makeBillboard(exhaust,"🚀 ROCKET SILO",Color3.fromRGB(255,180,80),30,220,46,90)
 end
 
 -- RR_N: 💎 Crystal Forge
@@ -908,20 +908,20 @@ local function doUnlock(plotId, ownerPlayer)
 		builder(def.cx, def.cz, state.folder)
 	end
 
-	-- Owner nameplate
+	-- Owner nameplate — anchor height matches ticker so it sits just above the machine
 	if ownerPlayer then
 		local a = Instance.new("Part", state.folder)
 		a.Anchored = true; a.CanCollide = false
 		a.Size = Vector3.new(1,1,1)
-		a.CFrame = CFrame.new(def.cx, DECK_TOP+1, def.cz)
+		a.CFrame = CFrame.new(def.cx, tickerHeight + 4, def.cz)
 		a.Transparency = 1
-		makeBillboard(a, "⚡ "..ownerPlayer.Name, Color3.fromRGB(255,200,0), 22, 220, 50, 80)
+		makeBillboard(a, "⚡ "..ownerPlayer.Name, Color3.fromRGB(255,200,0), 4, 220, 50, 80)
 	end
 
 	-- ── INCOME TICKER VISUAL ──────────────────────────────────────
 	-- A floating coin that orbits above the machine to show it's earning money.
 	-- Clients see the rate via MachineRate_RE; this just shows activity.
-	local tickerHeight = DECK_TOP + (def.cost == 50000 and 22 or def.cost == 25000 and 20 or def.cost == 10000 and 14 or 10)
+	local tickerHeight = DECK_TOP + (def.cost >= 200000 and 36 or def.cost >= 75000 and 30 or def.cost >= 25000 and 24 or 20)
 	local tickerCoin = CYL({par=state.folder, name="IncomeCoin",
 		sz=Vector3.new(0.4, 2.8, 2.8),
 		cf=CFrame.new(def.cx + 8, tickerHeight, def.cz) * CFrame.Angles(0, 0, math.rad(90)),
@@ -929,17 +929,8 @@ local function doUnlock(plotId, ownerPlayer)
 	addLight(tickerCoin, 1.2, 12, Color3.fromRGB(255,200,0))
 	spinWorldY(tickerCoin, def.cx, tickerHeight, def.cz, 2.0)
 
-	-- Rate billboard below the ticker coin
-	local rateAnchor = Instance.new("Part", state.folder)
-	rateAnchor.Anchored = true; rateAnchor.CanCollide = false
-	rateAnchor.Size = Vector3.new(1,1,1)
-	rateAnchor.Transparency = 1
-	rateAnchor.CFrame = CFrame.new(def.cx, tickerHeight + 2, def.cz)
-	rateAnchor.Parent = state.folder
-	local rateBB = makeBillboard(rateAnchor, "💰 Auto-earning", Color3.fromRGB(200,255,160), 4, 200, 44, 80)
-	rateBB.Name  = "RateBillboard"
-	state.rateBB = rateBB
-	state.rateAnchor = rateAnchor
+	state.rateBB     = nil
+	state.rateAnchor = nil
 
 	print("[MoneyIsland] Plot", plotId, "→", ownerPlayer and ownerPlayer.Name or "anonymous")
 end
@@ -1260,38 +1251,38 @@ PlotRaidAlertBE.Event:Connect(function(plotId, isActive)
 	end
 end)
 
--- ── NIGHT SKYBOX + LIGHTING ──────────────────────────────────
-Lighting.ClockTime      = 0       -- midnight
-Lighting.Brightness     = 0.4
-Lighting.Ambient        = Color3.fromRGB(15, 18, 35)
-Lighting.OutdoorAmbient = Color3.fromRGB(22, 26, 55)
+-- ── TWILIGHT SKYBOX + LIGHTING ───────────────────────────────
+-- Late-evening twilight: dark enough for neon glow but bright enough to see
+Lighting.ClockTime      = 7.0     -- early morning / dawn
+Lighting.Brightness     = 1.4
+Lighting.Ambient        = Color3.fromRGB(85, 95, 145)   -- visible blue-tinted ambient
+Lighting.OutdoorAmbient = Color3.fromRGB(110, 122, 175)
 Lighting.GlobalShadows  = true
-Lighting.ShadowSoftness = 0.5
-Lighting.FogEnd         = 2000
-Lighting.FogColor       = Color3.fromRGB(8, 10, 22)
+Lighting.ShadowSoftness = 0.4
+Lighting.FogEnd         = 2200
+Lighting.FogColor       = Color3.fromRGB(22, 28, 55)
 
--- Star-filled night sky
+-- Sky with stars + visible sun
 local sky = Instance.new("Sky", Lighting)
-sky.StarCount      = 6000
-sky.MoonAngularSize = 11
-sky.SunAngularSize  = 0   -- hide sun at night
+sky.StarCount       = 3000
+sky.MoonAngularSize = 9
+sky.SunAngularSize  = 8
 
--- Bloom makes neon machines glow beautifully against the dark sky
+-- Bloom: neon machines glow but scene stays readable
 local bloom = Instance.new("BloomEffect", Lighting)
-bloom.Intensity  = 0.7
-bloom.Size       = 24
-bloom.Threshold  = 0.9
+bloom.Intensity  = 0.55
+bloom.Size       = 22
+bloom.Threshold  = 0.91
 
--- Subtle color grade: cooler blue-tinted night
+-- Color grade: slight warm tint so machines pop
 local cc = Instance.new("ColorCorrectionEffect", Lighting)
-cc.Saturation = 0.18; cc.Brightness = -0.05; cc.Contrast = 0.08
-cc.TintColor  = Color3.fromRGB(200, 210, 255)
+cc.Saturation = 0.14; cc.Brightness = 0.04; cc.Contrast = 0.06
+cc.TintColor  = Color3.fromRGB(215, 218, 255)
 
--- Thin atmosphere: minimal haze so distant neon pops
 local atmo = Instance.new("Atmosphere", Lighting)
-atmo.Density = 0.12; atmo.Offset = 0.04
-atmo.Color   = Color3.fromRGB(90, 100, 160)
-atmo.Decay   = Color3.fromRGB(40, 50, 90)
-atmo.Glare   = 0.0; atmo.Haze = 0.3
+atmo.Density = 0.11; atmo.Offset = 0.04
+atmo.Color   = Color3.fromRGB(95, 108, 168)
+atmo.Decay   = Color3.fromRGB(45, 55, 100)
+atmo.Glare   = 0.04; atmo.Haze = 0.3
 
 print("[MoneyIsland] Map v26 built! 20 unique machines, night skybox, CoinRain/GeyserSurge events.")

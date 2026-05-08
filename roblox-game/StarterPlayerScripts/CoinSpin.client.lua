@@ -360,11 +360,11 @@ local UserInputService = game:GetService("UserInputService")
 local Debris           = game:GetService("Debris")
 
 local WEAPON_DATA = {
-    CoinBlade     = {range=8,  col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false},
-    CoinSword     = {range=8,  col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false},
-    LaserStaff    = {range=55, col=Color3.fromRGB(80,160,255), isAoE=false, isProj=true},
-    ThunderHammer = {range=14, col=Color3.fromRGB(255,255,60), isAoE=true,  isProj=false},
-    ShadowBlade   = {range=11, col=Color3.fromRGB(160,40,255), isAoE=false, isProj=false},
+    CoinBlade     = {range=8,  col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false, cooldown=1.2},
+    CoinSword     = {range=8,  col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false, cooldown=1.2},
+    LaserStaff    = {range=55, col=Color3.fromRGB(80,160,255), isAoE=false, isProj=true,  cooldown=2.0},
+    ThunderHammer = {range=14, col=Color3.fromRGB(255,255,60), isAoE=true,  isProj=false, cooldown=4.0},
+    ShadowBlade   = {range=11, col=Color3.fromRGB(160,40,255), isAoE=false, isProj=false, cooldown=1.6},
 }
 local WEAPON_NAMES_SET = {}
 for k in pairs(WEAPON_DATA) do WEAPON_NAMES_SET[k] = true end
@@ -374,53 +374,115 @@ local equippedWeaponName   = nil
 
 -- ── VFX helpers ───────────────────────────────────────────────
 local function showSlashVFX(hrpCFrame, col)
+    -- Main wide arc
     local slash = Instance.new("Part")
     slash.Anchored = true; slash.CanCollide = false; slash.CastShadow = false
-    slash.Size = Vector3.new(0.3, 1.5, 7); slash.Material = Enum.Material.Neon
+    slash.Size = Vector3.new(0.5, 3, 10); slash.Material = Enum.Material.Neon
     slash.Color = col or Color3.fromRGB(255,220,50); slash.Transparency = 0
-    slash.CFrame = hrpCFrame * CFrame.new(0, 1, -3.5); slash.Parent = workspace
+    slash.CFrame = hrpCFrame * CFrame.new(0, 1, -5); slash.Parent = workspace
     TweenService:Create(slash, TweenInfo.new(0.3, Enum.EasingStyle.Quad),
-        {Transparency=1, Size=Vector3.new(0.1,0.8,9)}):Play()
+        {Transparency=1, Size=Vector3.new(0.1,1.5,13)}):Play()
     Debris:AddItem(slash, 0.35)
+    -- Second thinner trailing slash
+    local slash2 = Instance.new("Part")
+    slash2.Anchored = true; slash2.CanCollide = false; slash2.CastShadow = false
+    slash2.Size = Vector3.new(0.3, 2, 8); slash2.Material = Enum.Material.Neon
+    slash2.Color = col or Color3.fromRGB(255,220,50); slash2.Transparency = 0.4
+    slash2.CFrame = hrpCFrame * CFrame.new(0.8, 0.5, -4) * CFrame.Angles(0,0,math.rad(15))
+    slash2.Parent = workspace
+    TweenService:Create(slash2, TweenInfo.new(0.25), {Transparency=1}):Play()
+    Debris:AddItem(slash2, 0.3)
 end
 
 local function showProjectileVFX(origin, direction, col)
+    -- Fat glowing bolt
     local bolt = Instance.new("Part")
     bolt.Anchored = true; bolt.CanCollide = false; bolt.CastShadow = false
-    bolt.Size = Vector3.new(0.4, 0.4, 2.5); bolt.Material = Enum.Material.Neon
+    bolt.Size = Vector3.new(0.7, 0.7, 4); bolt.Material = Enum.Material.Neon
     bolt.Color = col or Color3.fromRGB(80,160,255); bolt.Transparency = 0
     bolt.CFrame = CFrame.new(origin, origin + direction) * CFrame.new(0, 0, -1)
     bolt.Parent = workspace
-    local target = origin + direction.Unit * 55
-    TweenService:Create(bolt, TweenInfo.new(0.45, Enum.EasingStyle.Linear),
-        {CFrame = CFrame.new(target, target + direction), Transparency = 0.6}):Play()
-    Debris:AddItem(bolt, 0.5)
+    local target = origin + direction.Unit * 60
+    TweenService:Create(bolt, TweenInfo.new(0.35, Enum.EasingStyle.Linear),
+        {CFrame = CFrame.new(target, target + direction), Transparency = 0.5}):Play()
+    Debris:AddItem(bolt, 0.4)
+    -- Glow corona around the bolt
+    local glow = Instance.new("Part")
+    glow.Anchored = true; glow.CanCollide = false; glow.CastShadow = false
+    glow.Size = Vector3.new(1.4, 1.4, 5); glow.Material = Enum.Material.Neon
+    glow.Color = col or Color3.fromRGB(160,210,255); glow.Transparency = 0.65
+    glow.CFrame = bolt.CFrame; glow.Parent = workspace
+    TweenService:Create(glow, TweenInfo.new(0.35, Enum.EasingStyle.Linear),
+        {CFrame = CFrame.new(target, target + direction), Transparency = 1}):Play()
+    Debris:AddItem(glow, 0.4)
 end
 
 local function showAoEVFX(pos, range, col)
+    -- Expanding shockwave ring
     local ring = Instance.new("Part")
     ring.Anchored = true; ring.CanCollide = false; ring.CastShadow = false
-    ring.Size = Vector3.new(range*2, 0.5, range*2); ring.Material = Enum.Material.Neon
+    ring.Size = Vector3.new(2, 0.6, 2); ring.Material = Enum.Material.Neon
     ring.Shape = Enum.PartType.Cylinder
-    ring.Color = col or Color3.fromRGB(255,255,60); ring.Transparency = 0.3
+    ring.Color = col or Color3.fromRGB(255,255,60); ring.Transparency = 0.1
     ring.CFrame = CFrame.new(pos.X, pos.Y+0.3, pos.Z) * CFrame.Angles(0,0,math.rad(90))
     ring.Parent = workspace
     TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad),
-        {Size = Vector3.new(range*2+8, 0.2, range*2+8), Transparency = 1}):Play()
+        {Size = Vector3.new(range*2+12, 0.2, range*2+12), Transparency = 1}):Play()
     Debris:AddItem(ring, 0.6)
+    -- Lightning spikes upward
+    for i = 1, 5 do
+        local spike = Instance.new("Part")
+        spike.Anchored = true; spike.CanCollide = false; spike.CastShadow = false
+        local angle = (i/5) * math.pi * 2
+        spike.Size = Vector3.new(0.4, 6, 0.4); spike.Material = Enum.Material.Neon
+        spike.Color = col or Color3.fromRGB(255,255,60); spike.Transparency = 0.2
+        spike.CFrame = CFrame.new(pos.X + math.cos(angle)*range*0.6, pos.Y+3, pos.Z + math.sin(angle)*range*0.6)
+        spike.Parent = workspace
+        TweenService:Create(spike, TweenInfo.new(0.4), {Transparency=1, Size=Vector3.new(0.1,8,0.1)}):Play()
+        Debris:AddItem(spike, 0.5)
+    end
 end
 
 local function showShadowFlash(hrpCFrame)
-    for i = 1, 3 do
+    for i = 1, 5 do
         local flash = Instance.new("Part")
         flash.Anchored = true; flash.CanCollide = false; flash.CastShadow = false
-        flash.Size = Vector3.new(2, 4, 0.3); flash.Material = Enum.Material.Neon
-        flash.Color = Color3.fromRGB(160, 40, 255); flash.Transparency = 0.2
-        flash.CFrame = hrpCFrame * CFrame.new(math.random(-2,2), 0, -3 - i) * CFrame.Angles(0, math.rad(i*20), 0)
+        flash.Size = Vector3.new(2.5, 5, 0.4); flash.Material = Enum.Material.Neon
+        flash.Color = Color3.fromRGB(160, 40, 255); flash.Transparency = 0.1
+        flash.CFrame = hrpCFrame * CFrame.new(math.random(-3,3), 0, -2.5 - i*0.8) * CFrame.Angles(0, math.rad(i*25), 0)
         flash.Parent = workspace
-        TweenService:Create(flash, TweenInfo.new(0.25), {Transparency = 1}):Play()
-        Debris:AddItem(flash, 0.3)
+        TweenService:Create(flash, TweenInfo.new(0.3), {Transparency = 1, Size=Vector3.new(0.1,6,0.1)}):Play()
+        Debris:AddItem(flash, 0.35)
     end
+    -- Dark ring at feet
+    local ring = Instance.new("Part")
+    ring.Anchored = true; ring.CanCollide = false; ring.CastShadow = false
+    ring.Size = Vector3.new(3,0.3,3); ring.Material = Enum.Material.Neon
+    ring.Shape = Enum.PartType.Cylinder
+    ring.Color = Color3.fromRGB(80,0,140); ring.Transparency = 0.2
+    ring.CFrame = hrpCFrame * CFrame.new(0,-2.5,0) * CFrame.Angles(0,0,math.rad(90))
+    ring.Parent = workspace
+    TweenService:Create(ring, TweenInfo.new(0.4), {Size=Vector3.new(14,0.2,14), Transparency=1}):Play()
+    Debris:AddItem(ring, 0.45)
+end
+
+local activeBlockShield = nil
+local function showBlockShield(char)
+    if activeBlockShield then pcall(function() activeBlockShield:Destroy() end) end
+    local hrp = char and char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+    local shield = Instance.new("Part")
+    shield.Anchored = false; shield.CanCollide = false; shield.CastShadow = false
+    shield.Shape = Enum.PartType.Ball
+    shield.Size = Vector3.new(8, 8, 8); shield.Material = Enum.Material.Neon
+    shield.Color = Color3.fromRGB(100, 180, 255); shield.Transparency = 0.45
+    shield.CFrame = hrp.CFrame; shield.Parent = workspace
+    local weld = Instance.new("Weld", shield)
+    weld.Part0 = hrp; weld.Part1 = shield; weld.C0 = CFrame.new(0,0,0)
+    activeBlockShield = shield
+    -- Fade and destroy after 2s
+    TweenService:Create(shield, TweenInfo.new(1.8, Enum.EasingStyle.Quad), {Transparency=1}):Play()
+    Debris:AddItem(shield, 2.1)
+    task.delay(2.1, function() if activeBlockShield == shield then activeBlockShield = nil end end)
 end
 
 -- ── Hit detection ─────────────────────────────────────────────
@@ -478,6 +540,10 @@ local function onWeaponActivated(weaponId)
     else
         floatText("⚔️ Miss!", Color3.fromRGB(180,180,180))
     end
+
+    task.delay(wdata.cooldown, function()
+        weaponCooldownActive = false
+    end)
 end
 
 -- ── Weapon attachment ─────────────────────────────────────────
@@ -517,14 +583,23 @@ local blockCooldown = false
 
 local function showDashTrail(startPos, endPos)
     local mid = (startPos + endPos) / 2
-    local len = (endPos - startPos).Magnitude
+    local len = math.max(1, (endPos - startPos).Magnitude)
+    -- Core bright trail
     local trail = Instance.new("Part")
     trail.Anchored = true; trail.CanCollide = false; trail.CastShadow = false
-    trail.Size = Vector3.new(0.8, 0.8, len); trail.Material = Enum.Material.Neon
-    trail.Color = Color3.fromRGB(80,160,255); trail.Transparency = 0.2
+    trail.Size = Vector3.new(1.2, 1.2, len); trail.Material = Enum.Material.Neon
+    trail.Color = Color3.fromRGB(80,180,255); trail.Transparency = 0.1
     trail.CFrame = CFrame.new(mid, endPos); trail.Parent = workspace
-    TweenService:Create(trail, TweenInfo.new(0.25), {Transparency = 1}):Play()
-    Debris:AddItem(trail, 0.3)
+    TweenService:Create(trail, TweenInfo.new(0.35), {Transparency = 1, Size=Vector3.new(0.1,0.1,len)}):Play()
+    Debris:AddItem(trail, 0.4)
+    -- Wide glow halo
+    local halo = Instance.new("Part")
+    halo.Anchored = true; halo.CanCollide = false; halo.CastShadow = false
+    halo.Size = Vector3.new(2.5, 2.5, len); halo.Material = Enum.Material.Neon
+    halo.Color = Color3.fromRGB(160,220,255); halo.Transparency = 0.6
+    halo.CFrame = CFrame.new(mid, endPos); halo.Parent = workspace
+    TweenService:Create(halo, TweenInfo.new(0.3), {Transparency = 1}):Play()
+    Debris:AddItem(halo, 0.35)
 end
 
 UserInputService.InputBegan:Connect(function(input, gpe)
@@ -535,9 +610,9 @@ UserInputService.InputBegan:Connect(function(input, gpe)
         local hrp = char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
         dashCooldown = true
         local startPos = hrp.Position
-        UseAbilityRE:FireServer("Dash")
+        UseAbilityRE:FireServer("dash")
         -- Visual trail after a short delay (server teleports character, then we draw)
-        task.delay(0.05, function()
+        task.delay(0.08, function()
             if hrp.Parent then showDashTrail(startPos, hrp.Position) end
         end)
         floatText("💨 Dash!", Color3.fromRGB(80,200,255))
@@ -545,8 +620,10 @@ UserInputService.InputBegan:Connect(function(input, gpe)
 
     elseif input.KeyCode == Enum.KeyCode.E and not blockCooldown then
         blockCooldown = true
-        UseAbilityRE:FireServer("Block")
-        floatText("🛡️ Block!", Color3.fromRGB(255,200,80))
+        UseAbilityRE:FireServer("block")
+        local char = player.Character
+        if char then showBlockShield(char) end
+        floatText("🛡️ Block!", Color3.fromRGB(100,180,255))
         task.delay(15, function() blockCooldown = false end)
     end
 end)

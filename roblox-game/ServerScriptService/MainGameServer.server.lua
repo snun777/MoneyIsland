@@ -34,9 +34,9 @@ local PRODUCTS = {
 	COINS_LARGE=3586040422, RESET=3586040561,
 }
 
-local BASE_COIN_VALUE = 30
+local BASE_COIN_VALUE = 100
 local REBIRTH_MULT    = 2
-local DAILY_REWARDS   = {100,200,350,500,750,1000,2500}
+local DAILY_REWARDS   = {500,1000,2000,3500,5000,8000,15000}
 local TICK_BASE       = 8
 local TICK_FLOOR      = 1
 local GEYSER_CAP      = 4
@@ -52,21 +52,21 @@ local WEAPONS = {
 	 isProjectile=false, isAoE=false,
 	 color=Color3.fromRGB(255,215,0),  glow=Color3.fromRGB(255,200,0)},
 	{id="LaserStaff",    name="🔮 Laser Staff",    desc="Long-range projectile bolt.",
-	 damage=32, range=55, cooldown=2.0, cost=2000,
+	 damage=32, range=55, cooldown=2.0, cost=5000,
 	 isProjectile=true,  isAoE=false,
 	 color=Color3.fromRGB(80,160,255), glow=Color3.fromRGB(60,120,255)},
 	{id="ThunderHammer", name="🔨 Thunder Hammer", desc="Shockwave hits ALL nearby enemies!",
-	 damage=18, range=14, cooldown=4.0, cost=5000,
+	 damage=18, range=14, cooldown=4.0, cost=15000,
 	 isProjectile=false, isAoE=true,
 	 color=Color3.fromRGB(255,255,60), glow=Color3.fromRGB(255,220,0)},
 	{id="ShadowBlade",   name="🌑 Shadow Blade",   desc="Fast dark blade, high damage.",
-	 damage=42, range=11, cooldown=1.6, cost=12000,
+	 damage=42, range=11, cooldown=1.6, cost=40000,
 	 isProjectile=false, isAoE=false,
 	 color=Color3.fromRGB(160,40,255), glow=Color3.fromRGB(120,0,200)},
 }
 local weaponById = {}
 for _,w in ipairs(WEAPONS) do weaponById[w.id]=w end
-local WEAPON_UPGRADE_COSTS = {500,1500,4000,10000}  -- lv1→2, 2→3, 3→4, 4→5
+local WEAPON_UPGRADE_COSTS = {2000,6000,15000,40000}  -- lv1→2, 2→3, 3→4, 4→5
 
 -- ── BUILDING UPGRADE PATHS ───────────────────────────────────
 local PLOT_PATHS = {
@@ -135,16 +135,16 @@ local SwordHitRE = ensureRemote("RemoteEvent","SwordHit_RE")  -- backward compat
 
 -- ── PLOT CENTERS ──────────────────────────────────────────────
 local PLOT_CENTERS={
-	L_N={cx=-50,cz=50,cost=2000},   R_N={cx=50,cz=50,cost=2000},
-	L_S={cx=-50,cz=-50,cost=2000},  R_S={cx=50,cz=-50,cost=2000},
-	LL_M={cx=-100,cz=0,cost=10000}, RR_M={cx=100,cz=0,cost=10000},
-	C_NN={cx=0,cz=100,cost=10000},  C_SS={cx=0,cz=-100,cost=10000},
-	LL_N={cx=-100,cz=50,cost=25000}, LL_S={cx=-100,cz=-50,cost=25000},
-	RR_N={cx=100,cz=50,cost=25000},  RR_S={cx=100,cz=-50,cost=25000},
-	L_NN={cx=-50,cz=100,cost=25000}, R_NN={cx=50,cz=100,cost=25000},
-	L_SS={cx=-50,cz=-100,cost=25000},R_SS={cx=50,cz=-100,cost=25000},
-	LL_NN={cx=-100,cz=100,cost=50000},RR_NN={cx=100,cz=100,cost=50000},
-	LL_SS={cx=-100,cz=-100,cost=50000},RR_SS={cx=100,cz=-100,cost=50000},
+	L_N={cx=-50,cz=50,cost=4000},   R_N={cx=50,cz=50,cost=4000},
+	L_S={cx=-50,cz=-50,cost=4000},  R_S={cx=50,cz=-50,cost=4000},
+	LL_M={cx=-100,cz=0,cost=25000}, RR_M={cx=100,cz=0,cost=25000},
+	C_NN={cx=0,cz=100,cost=25000},  C_SS={cx=0,cz=-100,cost=25000},
+	LL_N={cx=-100,cz=50,cost=75000}, LL_S={cx=-100,cz=-50,cost=75000},
+	RR_N={cx=100,cz=50,cost=75000},  RR_S={cx=100,cz=-50,cost=75000},
+	L_NN={cx=-50,cz=100,cost=75000}, R_NN={cx=50,cz=100,cost=75000},
+	L_SS={cx=-50,cz=-100,cost=75000},R_SS={cx=50,cz=-100,cost=75000},
+	LL_NN={cx=-100,cz=100,cost=200000},RR_NN={cx=100,cz=100,cost=200000},
+	LL_SS={cx=-100,cz=-100,cost=200000},RR_SS={cx=100,cz=-100,cost=200000},
 }
 local PLOT_HALF=25
 local HOT_ZONE_CENTERS={{cx=0,cz=0},{cx=-50,cz=0},{cx=50,cz=0},{cx=0,cz=50},{cx=0,cz=-50}}
@@ -154,7 +154,7 @@ local RAID_TIME=5; local RAID_IMMUNE=240
 local raidProgress={}; local raidImmune={}; local raidWarned={}; local raidActiveOnPlot={}
 
 -- ── DATA STORE ────────────────────────────────────────────────
-local DS = DataStoreService:GetDataStore("MoneyIsland_v18")
+local DS = DataStoreService:GetDataStore("MoneyIsland_v19")
 local DEFAULT_DATA={
 	coins=0,totalEarned=0,rebirths=0,upgrades={},
 	lastDaily=0,dailyStreak=0,lastSave=0,playTime=0,
@@ -174,7 +174,7 @@ local function deepCopy(t)
 end
 
 local function loadData(player)
-	local ok,data=pcall(function() return DS:GetAsync("MI18_"..player.UserId) end)
+	local ok,data=pcall(function() return DS:GetAsync("MI19_"..player.UserId) end)
 	local d=deepCopy(DEFAULT_DATA)
 	if ok and data then for k,v in pairs(data) do d[k]=v end end
 	if not d.ownedWeapons  then d.ownedWeapons={"CoinBlade"} end
@@ -201,7 +201,7 @@ local function saveData(player)
 	local d=playerData[player.UserId]; if not d then return end
 	d.lastSave=os.time()
 	local s=deepCopy(d); s._gp=nil; s.ownedPlots=nil; s._offlineBonus=nil
-	pcall(function() DS:SetAsync("MI18_"..player.UserId,s) end)
+	pcall(function() DS:SetAsync("MI19_"..player.UserId,s) end)
 end
 
 local cachedRanking={}; local lastRankBuild=0
@@ -417,7 +417,7 @@ task.spawn(function()
 		task.wait(5)
 		for _,player in ipairs(Players:GetPlayers()) do
 			local uid=player.UserId; local d=playerData[uid]; if not d then continue end
-			local cost=math.floor(3000*(2^d.rebirths)); local pct=d.coins/math.max(1,cost)
+			local cost=math.floor(75000*(2^d.rebirths)); local pct=d.coins/math.max(1,cost)
 			if pct>=0.8 and not prestigeWarned[uid] then
 				prestigeWarned[uid]=true
 				for _,p in ipairs(Players:GetPlayers()) do
@@ -600,6 +600,7 @@ RE.WeaponActivate.OnServerEvent:Connect(function(att,wId)  handleWeaponAoE(att,w
 -- ── ABILITY SYSTEM ────────────────────────────────────────────
 local ABILITY_CD={dash=8,block=15}
 RE.UseAbility.OnServerEvent:Connect(function(player,abilityName)
+	abilityName=string.lower(abilityName or "")
 	local uid=player.UserId; local now=os.time()
 	abilityCDs[uid]=abilityCDs[uid] or {}
 	local last=abilityCDs[uid][abilityName] or 0
@@ -650,6 +651,15 @@ RE.WeaponShopBuy.OnServerEvent:Connect(function(player,weaponId,action)
 		d.weaponLevels=d.weaponLevels or {}; d.weaponLevels[weaponId]=1
 		replaceWeapon(); pushStats(player)
 		RE.NotifyPlayer:FireClient(player,"✅ Purchased!",w.name.." unlocked & equipped!","green")
+	elseif action=="equip" then
+		local owned=false
+		for _,ww in ipairs(d.ownedWeapons or {}) do if ww==weaponId then owned=true;break end end
+		if owned then
+			replaceWeapon(); pushStats(player)
+			RE.NotifyPlayer:FireClient(player,"⚔️ Equipped!",w.name.." equipped!","green")
+		else
+			RE.NotifyPlayer:FireClient(player,"❌ Not owned!","Buy "..w.name.." first!","red")
+		end
 	elseif action=="upgrade" then
 		d.weaponLevels=d.weaponLevels or {}
 		local lvl=d.weaponLevels[weaponId] or 1
@@ -956,7 +966,7 @@ end)
 -- ── REBIRTH ───────────────────────────────────────────────────
 RE.Rebirth.OnServerEvent:Connect(function(player)
 	local d=playerData[player.UserId]; if not d then return end
-	local cost=math.floor(3000*(2^d.rebirths))
+	local cost=math.floor(75000*(2^d.rebirths))
 	if d.coins<cost then RE.NotifyPlayer:FireClient(player,"❌ Need "..cost.." coins","Prestige costs more","red"); return end
 	local uid=player.UserId
 	for plotId,owned in pairs(d.ownedPlots or {}) do
@@ -1041,4 +1051,4 @@ PlotPurchaseBE.Event:Connect(function(player,plotId,cost)
 	RE.MachineRate:FireClient(player,plotId,getPlotCoinValue(player,plotId),getPlotTickInterval(player,plotId))
 end)
 
-print("[MoneyIsland] ✅ Server v18 loaded! HP PvP, 4 weapons, building upgrades, random events.")
+print("[MoneyIsland] ✅ Server v19 loaded! HP PvP, 4 weapons, building upgrades, random events.")
