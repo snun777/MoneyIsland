@@ -245,38 +245,38 @@ local PLOT_DEFS = {
 	{id="R_M",  cx=COLS[4], cz=ROWS[3], contested=true},
 	{id="C_N",  cx=COLS[3], cz=ROWS[4], contested=true},
 	{id="C_S",  cx=COLS[3], cz=ROWS[2], contested=true},
-	-- ── OWNED PLOTS ring 1 (adjacent to contested, cost 4,000) ──
-	{id="L_N",  cx=COLS[2], cz=ROWS[4], cost=4000,   color=Color3.fromRGB(80,255,120), label="4,000 Coins"},
-	{id="R_N",  cx=COLS[4], cz=ROWS[4], cost=4000,   color=Color3.fromRGB(80,255,120), label="4,000 Coins"},
-	{id="L_S",  cx=COLS[2], cz=ROWS[2], cost=4000,   color=Color3.fromRGB(80,255,120), label="4,000 Coins"},
-	{id="R_S",  cx=COLS[4], cz=ROWS[2], cost=4000,   color=Color3.fromRGB(80,255,120), label="4,000 Coins"},
-	-- ── OWNED PLOTS ring 2 (cost 25,000) ──
-	{id="LL_M", cx=COLS[1], cz=ROWS[3], cost=25000,  color=Color3.fromRGB(255,160,0),  label="25,000 Coins"},
-	{id="RR_M", cx=COLS[5], cz=ROWS[3], cost=25000,  color=Color3.fromRGB(255,160,0),  label="25,000 Coins"},
-	{id="C_NN", cx=COLS[3], cz=ROWS[5], cost=25000,  color=Color3.fromRGB(255,160,0),  label="25,000 Coins"},
-	{id="C_SS", cx=COLS[3], cz=ROWS[1], cost=25000,  color=Color3.fromRGB(255,160,0),  label="25,000 Coins"},
-	-- ── OWNED PLOTS ring 3 (cost 75,000) ──
-	{id="LL_N", cx=COLS[1], cz=ROWS[4], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
-	{id="LL_S", cx=COLS[1], cz=ROWS[2], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
-	{id="RR_N", cx=COLS[5], cz=ROWS[4], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
-	{id="RR_S", cx=COLS[5], cz=ROWS[2], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
-	{id="L_NN", cx=COLS[2], cz=ROWS[5], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
-	{id="R_NN", cx=COLS[4], cz=ROWS[5], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
-	{id="L_SS", cx=COLS[2], cz=ROWS[1], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
-	{id="R_SS", cx=COLS[4], cz=ROWS[1], cost=75000,  color=Color3.fromRGB(255,200,0),  label="75,000 Coins"},
-	-- ── OWNED PLOTS ring 4 corners (cost 200,000) ──
-	{id="LL_NN",cx=COLS[1], cz=ROWS[5], cost=200000, color=Color3.fromRGB(220,80,255), label="200,000 Coins"},
-	{id="RR_NN",cx=COLS[5], cz=ROWS[5], cost=200000, color=Color3.fromRGB(220,80,255), label="200,000 Coins"},
-	{id="LL_SS",cx=COLS[1], cz=ROWS[1], cost=200000, color=Color3.fromRGB(220,80,255), label="200,000 Coins"},
-	{id="RR_SS",cx=COLS[5], cz=ROWS[1], cost=200000, color=Color3.fromRGB(220,80,255), label="200,000 Coins"},
+	-- ── OWNED PLOTS ring 1 — inner, accessible from start (cost 5,000) ──
+	{id="L_N",  cx=COLS[2], cz=ROWS[4], cost=5000,    color=Color3.fromRGB(80,255,120), label="5,000 Coins"},
+	{id="R_N",  cx=COLS[4], cz=ROWS[4], cost=5000,    color=Color3.fromRGB(80,255,120), label="5,000 Coins"},
+	{id="L_S",  cx=COLS[2], cz=ROWS[2], cost=5000,    color=Color3.fromRGB(80,255,120), label="5,000 Coins"},
+	{id="R_S",  cx=COLS[4], cz=ROWS[2], cost=5000,    color=Color3.fromRGB(80,255,120), label="5,000 Coins"},
+	-- ── OWNED PLOTS ring 2 — mid ring, P1 territory (cost 50,000) ──
+	{id="LL_M", cx=COLS[1], cz=ROWS[3], cost=50000,   color=Color3.fromRGB(255,160,0),  label="50,000 Coins"},
+	{id="RR_M", cx=COLS[5], cz=ROWS[3], cost=50000,   color=Color3.fromRGB(255,160,0),  label="50,000 Coins"},
+	{id="C_NN", cx=COLS[3], cz=ROWS[5], cost=50000,   color=Color3.fromRGB(255,160,0),  label="50,000 Coins"},
+	{id="C_SS", cx=COLS[3], cz=ROWS[1], cost=50000,   color=Color3.fromRGB(255,160,0),  label="50,000 Coins"},
+	-- ── OWNED PLOTS ring 3 — outer, P2-3 territory (cost 300,000) ──
+	{id="LL_N", cx=COLS[1], cz=ROWS[4], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
+	{id="LL_S", cx=COLS[1], cz=ROWS[2], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
+	{id="RR_N", cx=COLS[5], cz=ROWS[4], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
+	{id="RR_S", cx=COLS[5], cz=ROWS[2], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
+	{id="L_NN", cx=COLS[2], cz=ROWS[5], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
+	{id="R_NN", cx=COLS[4], cz=ROWS[5], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
+	{id="L_SS", cx=COLS[2], cz=ROWS[1], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
+	{id="R_SS", cx=COLS[4], cz=ROWS[1], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
+	-- ── OWNED PLOTS ring 4 — corners, P4+ endgame (cost 1,500,000) ──
+	{id="LL_NN",cx=COLS[1], cz=ROWS[5], cost=1500000, color=Color3.fromRGB(220,80,255), label="1,500,000 Coins"},
+	{id="RR_NN",cx=COLS[5], cz=ROWS[5], cost=1500000, color=Color3.fromRGB(220,80,255), label="1,500,000 Coins"},
+	{id="LL_SS",cx=COLS[1], cz=ROWS[1], cost=1500000, color=Color3.fromRGB(220,80,255), label="1,500,000 Coins"},
+	{id="RR_SS",cx=COLS[5], cz=ROWS[1], cost=1500000, color=Color3.fromRGB(220,80,255), label="1,500,000 Coins"},
 }
 
--- Floor color tiers for owned plots
+-- Floor color tiers for owned plots (keyed by base plot cost)
 local TIER_FLOORS = {
-	[2000]  = Color3.fromRGB(108,75,38),
-	[10000] = Color3.fromRGB(90,62,28),
-	[25000] = Color3.fromRGB(72,50,22),
-	[50000] = Color3.fromRGB(55,35,80),
+	[5000]    = Color3.fromRGB(108,75,38),   -- inner ring  — earthy green-brown
+	[50000]   = Color3.fromRGB(80,55,110),   -- mid ring    — deep purple
+	[300000]  = Color3.fromRGB(130,90,20),   -- outer ring  — gold
+	[1500000] = Color3.fromRGB(90,20,120),   -- corner ring — vivid purple
 }
 local function getFloorCol(cost) return TIER_FLOORS[cost] or Color3.fromRGB(120,84,44) end
 

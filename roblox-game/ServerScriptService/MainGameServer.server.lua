@@ -36,7 +36,8 @@ local PRODUCTS = {
 
 local BASE_COIN_VALUE = 100
 local REBIRTH_MULT    = 2
-local DAILY_REWARDS   = {500,1000,2000,3500,5000,8000,15000}
+-- Day 1-7 daily reward; scales so even endgame players care about day 7
+local DAILY_REWARDS   = {2000,5000,12000,30000,80000,200000,750000}
 local TICK_BASE       = 8
 local TICK_FLOOR      = 1
 local GEYSER_CAP      = 4
@@ -46,33 +47,36 @@ local MAX_HP        = 100
 local KILL_COIN_PCT = 0.20
 
 -- ── WEAPONS ───────────────────────────────────────────────────
+-- prestigeReq = minimum rebirths before this weapon can be purchased
 local WEAPONS = {
 	{id="CoinBlade",     name="⚔️ Coin Blade",     desc="Classic melee sword.",
-	 damage=25, range=8,  cooldown=1.2, cost=0,
+	 damage=25, range=8,  cooldown=1.2, cost=0,        prestigeReq=0,
 	 isProjectile=false, isAoE=false,
 	 color=Color3.fromRGB(255,215,0),  glow=Color3.fromRGB(255,200,0)},
-	{id="LaserStaff",    name="🔮 Laser Staff",    desc="Long-range projectile bolt.",
-	 damage=32, range=55, cooldown=2.0, cost=5000,
+	{id="LaserStaff",    name="🔮 Laser Staff",    desc="Long-range precision bolt.",
+	 damage=32, range=55, cooldown=2.0, cost=20000,    prestigeReq=0,
 	 isProjectile=true,  isAoE=false,
 	 color=Color3.fromRGB(80,160,255), glow=Color3.fromRGB(60,120,255)},
 	{id="ThunderHammer", name="🔨 Thunder Hammer", desc="Shockwave hits ALL nearby enemies!",
-	 damage=18, range=14, cooldown=4.0, cost=15000,
+	 damage=22, range=16, cooldown=3.5, cost=300000,   prestigeReq=2,
 	 isProjectile=false, isAoE=true,
 	 color=Color3.fromRGB(255,255,60), glow=Color3.fromRGB(255,220,0)},
-	{id="ShadowBlade",   name="🌑 Shadow Blade",   desc="Fast dark blade, high damage.",
-	 damage=42, range=11, cooldown=1.6, cost=40000,
+	{id="ShadowBlade",   name="🌑 Shadow Blade",   desc="Fast dark blade, lethal damage.",
+	 damage=48, range=12, cooldown=1.5, cost=2000000,  prestigeReq=4,
 	 isProjectile=false, isAoE=false,
 	 color=Color3.fromRGB(160,40,255), glow=Color3.fromRGB(120,0,200)},
 }
 local weaponById = {}
 for _,w in ipairs(WEAPONS) do weaponById[w.id]=w end
-local WEAPON_UPGRADE_COSTS = {2000,6000,15000,40000}  -- lv1→2, 2→3, 3→4, 4→5
+-- Weapon upgrade costs: Lv1→2, 2→3, 3→4, 4→5
+local WEAPON_UPGRADE_COSTS = {15000, 80000, 350000, 1500000}
 
 -- ── BUILDING UPGRADE PATHS ───────────────────────────────────
+-- Costs are intentionally steep so full plot investment is a multi-prestige project
 local PLOT_PATHS = {
-	A={name="⚡ Production", desc="More coins per tick",       costs={500,2500,10000,30000}, mults={1.5,2.0,3.0,5.0}},
-	B={name="⏱️ Efficiency",  desc="Faster tick interval",      costs={750,3500,12000,35000}, reds={1,2,3,5}},
-	C={name="🛡️ Defense",     desc="Raid protection & bonuses", costs={1000,6000,20000,50000},
+	A={name="⚡ Production", desc="More coins per tick",       costs={2000,15000,75000,350000}, mults={1.5,2.0,3.0,5.0}},
+	B={name="⏱️ Efficiency",  desc="Faster tick interval",      costs={3000,20000,100000,500000}, reds={1,2,3,5}},
+	C={name="🛡️ Defense",     desc="Raid protection & bonuses", costs={5000,30000,150000,700000},
 	   labels={"Raiders need 8s","8min raid immunity","Earn while defending","Golden: 3x income"}},
 }
 
@@ -88,15 +92,16 @@ local RANDOM_EVENTS = {
 }
 
 -- ── UPGRADES ──────────────────────────────────────────────────
+-- Costs are deliberately steep — these are long-term investments across multiple prestiges
 local UPGRADES = {
 	{key="coinMagnet", name="Magnet Range",  icon="🧲", desc="Requires Mega Magnet pass.",
-	 maxLevel=9999, baseCost=120,  costMult=1.15, effect=function(l) return 5+l*3 end},
+	 maxLevel=9999, baseCost=400,  costMult=1.2,  effect=function(l) return 5+l*3 end},
 	{key="touchSpeed", name="Plot Speed",    icon="⚡", desc="Faster auto-tick.",
-	 maxLevel=7,    baseCost=80,   costMult=1.2,  effect=function(l) return math.max(TICK_FLOOR,TICK_BASE-l) end},
+	 maxLevel=6,    baseCost=3000, costMult=1.5,  effect=function(l) return math.max(TICK_FLOOR,TICK_BASE-l) end},
 	{key="coinValue",  name="Coin Value",    icon="💰", desc="More coins per tick/collect.",
-	 maxLevel=9999, baseCost=200,  costMult=1.15, effect=function(l) return 1+l*0.5 end},
+	 maxLevel=20,   baseCost=5000, costMult=1.4,  effect=function(l) return 1+l*0.5 end},
 	{key="offlineVault",name="Offline Vault",icon="🏦", desc="Earn coins while offline.",
-	 maxLevel=8,    baseCost=500,  costMult=2.0,  effect=function(l) return l end},
+	 maxLevel=8,    baseCost=12000,costMult=2.5,  effect=function(l) return l end},
 }
 local function getUpgrade(key) for _,u in ipairs(UPGRADES) do if u.key==key then return u end end end
 local function getUpgradeCost(u,l) return math.floor(u.baseCost*(u.costMult^l)) end
@@ -134,17 +139,21 @@ local RE={
 local SwordHitRE = ensureRemote("RemoteEvent","SwordHit_RE")  -- backward compat
 
 -- ── PLOT CENTERS ──────────────────────────────────────────────
+-- Inner ring: accessible from the start
+-- Mid ring:   reachable by first prestige
+-- Outer ring: P2-3 territory
+-- Corners:    P4+ endgame
 local PLOT_CENTERS={
-	L_N={cx=-50,cz=50,cost=4000},   R_N={cx=50,cz=50,cost=4000},
-	L_S={cx=-50,cz=-50,cost=4000},  R_S={cx=50,cz=-50,cost=4000},
-	LL_M={cx=-100,cz=0,cost=25000}, RR_M={cx=100,cz=0,cost=25000},
-	C_NN={cx=0,cz=100,cost=25000},  C_SS={cx=0,cz=-100,cost=25000},
-	LL_N={cx=-100,cz=50,cost=75000}, LL_S={cx=-100,cz=-50,cost=75000},
-	RR_N={cx=100,cz=50,cost=75000},  RR_S={cx=100,cz=-50,cost=75000},
-	L_NN={cx=-50,cz=100,cost=75000}, R_NN={cx=50,cz=100,cost=75000},
-	L_SS={cx=-50,cz=-100,cost=75000},R_SS={cx=50,cz=-100,cost=75000},
-	LL_NN={cx=-100,cz=100,cost=200000},RR_NN={cx=100,cz=100,cost=200000},
-	LL_SS={cx=-100,cz=-100,cost=200000},RR_SS={cx=100,cz=-100,cost=200000},
+	L_N={cx=-50,cz=50,cost=5000},    R_N={cx=50,cz=50,cost=5000},
+	L_S={cx=-50,cz=-50,cost=5000},   R_S={cx=50,cz=-50,cost=5000},
+	LL_M={cx=-100,cz=0,cost=50000},  RR_M={cx=100,cz=0,cost=50000},
+	C_NN={cx=0,cz=100,cost=50000},   C_SS={cx=0,cz=-100,cost=50000},
+	LL_N={cx=-100,cz=50,cost=300000},  LL_S={cx=-100,cz=-50,cost=300000},
+	RR_N={cx=100,cz=50,cost=300000},   RR_S={cx=100,cz=-50,cost=300000},
+	L_NN={cx=-50,cz=100,cost=300000},  R_NN={cx=50,cz=100,cost=300000},
+	L_SS={cx=-50,cz=-100,cost=300000}, R_SS={cx=50,cz=-100,cost=300000},
+	LL_NN={cx=-100,cz=100,cost=1500000}, RR_NN={cx=100,cz=100,cost=1500000},
+	LL_SS={cx=-100,cz=-100,cost=1500000},RR_SS={cx=100,cz=-100,cost=1500000},
 }
 local PLOT_HALF=25
 local HOT_ZONE_CENTERS={{cx=0,cz=0},{cx=-50,cz=0},{cx=50,cz=0},{cx=0,cz=50},{cx=0,cz=-50}}
@@ -417,7 +426,7 @@ task.spawn(function()
 		task.wait(5)
 		for _,player in ipairs(Players:GetPlayers()) do
 			local uid=player.UserId; local d=playerData[uid]; if not d then continue end
-			local cost=math.floor(75000*(2^d.rebirths)); local pct=d.coins/math.max(1,cost)
+			local cost=math.floor(100000*(3^d.rebirths)); local pct=d.coins/math.max(1,cost)
 			if pct>=0.8 and not prestigeWarned[uid] then
 				prestigeWarned[uid]=true
 				for _,p in ipairs(Players:GetPlayers()) do
@@ -642,6 +651,11 @@ RE.WeaponShopBuy.OnServerEvent:Connect(function(player,weaponId,action)
 		if owned then
 			replaceWeapon(); pushStats(player)
 			RE.NotifyPlayer:FireClient(player,"⚔️ Equipped!",w.name.." equipped!","green"); return
+		end
+		local reqPres = w.prestigeReq or 0
+		if (d.rebirths or 0) < reqPres then
+			RE.NotifyPlayer:FireClient(player,"🔒 Locked!","Requires "..reqPres.." prestige".. (reqPres==1 and "" or "s").." (you have "..(d.rebirths or 0)..")","red")
+			return
 		end
 		if d.coins<w.cost then
 			RE.NotifyPlayer:FireClient(player,"❌ Not enough!","Need "..w.cost.." coins","red"); return
@@ -966,7 +980,8 @@ end)
 -- ── REBIRTH ───────────────────────────────────────────────────
 RE.Rebirth.OnServerEvent:Connect(function(player)
 	local d=playerData[player.UserId]; if not d then return end
-	local cost=math.floor(75000*(2^d.rebirths))
+	-- Cost triples each prestige: P1=100k, P2=300k, P3=900k, P4=2.7M, P5=8.1M ...
+	local cost=math.floor(100000*(3^d.rebirths))
 	if d.coins<cost then RE.NotifyPlayer:FireClient(player,"❌ Need "..cost.." coins","Prestige costs more","red"); return end
 	local uid=player.UserId
 	for plotId,owned in pairs(d.ownedPlots or {}) do

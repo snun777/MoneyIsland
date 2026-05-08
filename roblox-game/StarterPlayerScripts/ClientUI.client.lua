@@ -696,13 +696,14 @@ RE_AbilityCD.OnClientEvent:Connect(function(abilityName, cooldown)
 end)
 
 -- ── WEAPON SHOP PANEL ─────────────────────────────────────
+-- prestigeReq must match server WEAPONS table exactly
 local WEAPONS_CLIENT = {
-    {id="CoinBlade",     name="⚔️ Coin Blade",     desc="Classic melee sword.", cost=0,     col=Color3.fromRGB(255,215,0)},
-    {id="LaserStaff",    name="🔮 Laser Staff",    desc="Long-range projectile bolt.", cost=2000,  col=Color3.fromRGB(80,160,255)},
-    {id="ThunderHammer", name="🔨 Thunder Hammer", desc="AoE shockwave hits all nearby.", cost=5000,  col=Color3.fromRGB(255,255,60)},
-    {id="ShadowBlade",   name="🌑 Shadow Blade",   desc="Fast dark blade, high damage.", cost=12000, col=Color3.fromRGB(160,40,255)},
+    {id="CoinBlade",     name="⚔️ Coin Blade",     desc="Classic melee sword.",             cost=0,       prestigeReq=0, col=Color3.fromRGB(255,215,0)},
+    {id="LaserStaff",    name="🔮 Laser Staff",    desc="Long-range precision bolt.",        cost=20000,   prestigeReq=0, col=Color3.fromRGB(80,160,255)},
+    {id="ThunderHammer", name="🔨 Thunder Hammer", desc="Shockwave hits ALL nearby enemies!",cost=300000,  prestigeReq=2, col=Color3.fromRGB(255,255,60)},
+    {id="ShadowBlade",   name="🌑 Shadow Blade",   desc="Fast dark blade, lethal damage.",   cost=2000000, prestigeReq=4, col=Color3.fromRGB(160,40,255)},
 }
-local WEAPON_UPGRADE_COSTS_CLIENT = {500,1500,4000,10000}
+local WEAPON_UPGRADE_COSTS_CLIENT = {15000, 80000, 350000, 1500000}
 
 local weaponPanel = Instance.new("Frame", sg)
 weaponPanel.Name = "WeaponPanel"; weaponPanel.Visible = false
@@ -737,73 +738,103 @@ local function buildWeaponShop(ownedWeapons, weaponLevels, equippedWeapon, coins
     for _, c in ipairs(wpScroll:GetChildren()) do
         if c:IsA("Frame") then c:Destroy() end
     end
+    local playerRebirths = (currentData and currentData.rebirths) or 0
     local total = 0
     for _, w in ipairs(WEAPONS_CLIENT) do
-        local owned   = ownedWeapons and ownedWeapons[w.id]
-        local level   = (weaponLevels and weaponLevels[w.id]) or 1
-        local equipped= equippedWeapon == w.id
-        local upgIdx  = math.min(level, #WEAPON_UPGRADE_COSTS_CLIENT)
-        local upgCost = WEAPON_UPGRADE_COSTS_CLIENT[upgIdx]
-        local maxed   = level >= 5
+        local owned    = ownedWeapons and ownedWeapons[w.id]
+        local level    = (weaponLevels and weaponLevels[w.id]) or 1
+        local equipped = equippedWeapon == w.id
+        local upgIdx   = math.min(level, #WEAPON_UPGRADE_COSTS_CLIENT)
+        local upgCost  = WEAPON_UPGRADE_COSTS_CLIENT[upgIdx]
+        local maxed    = level >= 5
+        local req      = w.prestigeReq or 0
+        local locked   = (not owned) and (playerRebirths < req)  -- prestige gate
 
+        local cardH = locked and 106 or 96
         local card = Instance.new("Frame", wpScroll)
-        card.Size = UDim2.new(1,0,0,96); card.BackgroundColor3 = Color3.fromRGB(16,16,32)
+        card.Size = UDim2.new(1,0,0,cardH)
+        card.BackgroundColor3 = locked and Color3.fromRGB(10,10,18) or Color3.fromRGB(16,16,32)
         card.BorderSizePixel = 0
         Instance.new("UICorner", card).CornerRadius = UDim.new(0,10)
         local cs = Instance.new("UIStroke", card)
-        cs.Color = equipped and w.col or (owned and Color3.fromRGB(60,60,90) or Color3.fromRGB(35,35,55))
-        cs.Thickness = equipped and 2.5 or 1.2
+        if locked then
+            cs.Color = Color3.fromRGB(80,30,30); cs.Thickness = 1.2
+        else
+            cs.Color = equipped and w.col or (owned and Color3.fromRGB(60,60,90) or Color3.fromRGB(35,35,55))
+            cs.Thickness = equipped and 2.5 or 1.2
+        end
 
+        local nameCol = locked and Color3.fromRGB(100,80,80) or w.col
         local nm = Instance.new("TextLabel", card); nm.Size = UDim2.new(0.6,0,0,26)
         nm.Position = UDim2.new(0,10,0,6); nm.BackgroundTransparency = 1
-        nm.Text = w.name; nm.TextColor3 = w.col; nm.Font = Enum.Font.GothamBold; nm.TextSize = 15
+        nm.Text = (locked and "🔒 " or "") .. w.name
+        nm.TextColor3 = nameCol; nm.Font = Enum.Font.GothamBold; nm.TextSize = 15
         nm.TextXAlignment = Enum.TextXAlignment.Left
 
         local dsc = Instance.new("TextLabel", card); dsc.Size = UDim2.new(0.6,0,0,18)
         dsc.Position = UDim2.new(0,10,0,30); dsc.BackgroundTransparency = 1
-        dsc.Text = w.desc; dsc.TextColor3 = Color3.fromRGB(140,140,170); dsc.Font = Enum.Font.Gotham; dsc.TextSize = 11
+        dsc.Text = w.desc
+        dsc.TextColor3 = locked and Color3.fromRGB(90,80,80) or Color3.fromRGB(140,140,170)
+        dsc.Font = Enum.Font.Gotham; dsc.TextSize = 11
         dsc.TextXAlignment = Enum.TextXAlignment.Left
 
+        local statusRow = owned and ("Lv " .. level .. " / 5" .. (maxed and " MAX" or ""))
+            or locked and ("🔒 Requires " .. req .. " prestige" .. (req == 1 and "" or "s"))
+            or "Not owned"
         local lvl = Instance.new("TextLabel", card); lvl.Size = UDim2.new(0.6,0,0,18)
         lvl.Position = UDim2.new(0,10,0,50); lvl.BackgroundTransparency = 1
-        lvl.Text = owned and ("Lv " .. level .. " / 5" .. (maxed and " MAX" or "")) or "🔒 Not owned"
-        lvl.TextColor3 = owned and Color3.fromRGB(255,200,0) or Color3.fromRGB(100,100,120)
+        lvl.Text = statusRow
+        lvl.TextColor3 = owned and Color3.fromRGB(255,200,0)
+            or locked and Color3.fromRGB(180,80,80)
+            or Color3.fromRGB(100,100,120)
         lvl.Font = Enum.Font.GothamBold; lvl.TextSize = 12; lvl.TextXAlignment = Enum.TextXAlignment.Left
 
+        -- Progress indicator for locked weapons
+        if locked then
+            local progLbl = Instance.new("TextLabel", card); progLbl.Size = UDim2.new(0.6,0,0,14)
+            progLbl.Position = UDim2.new(0,10,0,68); progLbl.BackgroundTransparency = 1
+            progLbl.Text = "Your prestiges: " .. playerRebirths .. " / " .. req
+            progLbl.TextColor3 = Color3.fromRGB(130,100,100); progLbl.Font = Enum.Font.Gotham; progLbl.TextSize = 10
+            progLbl.TextXAlignment = Enum.TextXAlignment.Left
+        end
+
         local equippedTag = Instance.new("TextLabel", card); equippedTag.Size = UDim2.new(0.6,0,0,16)
-        equippedTag.Position = UDim2.new(0,10,0,70); equippedTag.BackgroundTransparency = 1
+        equippedTag.Position = UDim2.new(0,10,0,locked and 84 or 70); equippedTag.BackgroundTransparency = 1
         equippedTag.Text = equipped and "✓ EQUIPPED" or ""
         equippedTag.TextColor3 = w.col; equippedTag.Font = Enum.Font.GothamBold; equippedTag.TextSize = 11
         equippedTag.TextXAlignment = Enum.TextXAlignment.Left
 
         local btn = Instance.new("TextButton", card); btn.Size = UDim2.new(0,100,0,38)
         btn.Position = UDim2.new(1,-112,0.5,-19)
-        if not owned then
+        Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+
+        if locked then
+            btn.BackgroundColor3 = Color3.fromRGB(35,20,20)
+            btn.Text = "🔒 P" .. req .. " Req"
+            btn.TextColor3 = Color3.fromRGB(150,80,80); btn.Font = Enum.Font.GothamBold; btn.TextSize = 11
+            btn.Active = false
+        elseif not owned then
             btn.BackgroundColor3 = coins >= w.cost and Color3.fromRGB(80,20,120) or Color3.fromRGB(40,30,50)
             btn.Text = w.cost == 0 and "FREE" or ("💰 " .. fmt(w.cost))
             btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12
-            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
             btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer(w.id, "buy") end)
         elseif equipped then
             if not maxed then
                 btn.BackgroundColor3 = coins >= upgCost and Color3.fromRGB(20,80,20) or Color3.fromRGB(25,40,25)
                 btn.Text = "⬆️ " .. fmt(upgCost)
                 btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12
-                Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
                 btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer(w.id, "upgrade") end)
             else
                 btn.BackgroundColor3 = Color3.fromRGB(20,50,20)
                 btn.Text = "MAX ✓"; btn.TextColor3 = Color3.fromRGB(0,210,80)
                 btn.Font = Enum.Font.GothamBold; btn.TextSize = 13
-                Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
             end
         else
             btn.BackgroundColor3 = Color3.fromRGB(20,60,70)
             btn.Text = "Equip"; btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 13
-            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
             btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer(w.id, "equip") end)
         end
-        total = total + 104
+        total = total + cardH + 8
     end
     wpScroll.CanvasSize = UDim2.new(0,0,0,total)
 end
@@ -1107,13 +1138,13 @@ local function applyPrestigeTheme(rebirths)
     TweenService:Create(rebirthLbl, TweenInfo.new(0.6), {TextColor3 = t.rcol}):Play()
 end
 
--- New prestige cost: 75000 × 2^rebirths
-local PRESTIGE_BASE_COST = 75000
+-- Prestige cost: 100000 × 3^rebirths (P1=100k, P2=300k, P3=900k, P4=2.7M, P5=8.1M)
+local PRESTIGE_BASE_COST = 100000
 local function updateHUD(data)
     coinLbl.Text    = "💰 "..fmt(data.coins or 0)
     rebirthLbl.Text = "🔥 x"..(data.rebirths or 0)
     applyPrestigeTheme(data.rebirths or 0)
-    local cost = PRESTIGE_BASE_COST * (2 ^ (data.rebirths or 0))
+    local cost = PRESTIGE_BASE_COST * (3 ^ (data.rebirths or 0))
     local pct  = math.min(1, (data.coins or 0) / cost)
     TweenService:Create(pBarFill, TweenInfo.new(0.5, Enum.EasingStyle.Quad),
         {Size = UDim2.new(pct, 0, 1, 0)}):Play()
