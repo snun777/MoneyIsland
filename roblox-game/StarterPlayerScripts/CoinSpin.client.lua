@@ -1,27 +1,27 @@
--- CoinSpin.client.lua
+-- CoinSpin.client.lua  (v4 — magnet removed)
 -- 1. Floating +X text on coin collect
--- 2. Coin magnet with float animation (fixes coin-stuck-on-floor bug)
--- 3. Other players' magnet rings visible (pink/magenta)
--- 4. Sword PvP client — equip CoinSword → click to attack nearby players
+-- 2. Coin glow (SelectionBox on geyser coins)
+-- 3. Multi-weapon PvP client — equip weapon → click to attack nearby players
+-- 4. Dash (Q) & Block (E) abilities
 
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local TweenService      = game:GetService("TweenService")
 local RunService        = game:GetService("RunService")
+local UserInputService  = game:GetService("UserInputService")
+local Debris            = game:GetService("Debris")
 
 local player    = Players.LocalPlayer
 local RE_Notify = ReplicatedStorage:WaitForChild("NotifyPlayer",      30)
 local RE_Update = ReplicatedStorage:WaitForChild("UpdateStats",       30)
-local MagnetRE  = ReplicatedStorage:WaitForChild("MagnetCollect",     30)
-local MagnetBroadcastRE = ReplicatedStorage:WaitForChild("MagnetBroadcast_RE", 30)
-local WeaponHitRE       = ReplicatedStorage:WaitForChild("WeaponHit_RE",      30)
-local UseAbilityRE      = ReplicatedStorage:WaitForChild("UseAbility_RE",     30)
-local AbilityCooldownRE = ReplicatedStorage:WaitForChild("AbilityCooldown_RE",30)
+local WeaponHitRE       = ReplicatedStorage:WaitForChild("WeaponHit_RE",       30)
+local UseAbilityRE      = ReplicatedStorage:WaitForChild("UseAbility_RE",      30)
+local AbilityCooldownRE = ReplicatedStorage:WaitForChild("AbilityCooldown_RE", 30)
 local SwordHitRE        = WeaponHitRE  -- backward compat alias
 
 local playerCooldown = 8  -- kept in sync with server TICK_BASE via RE_Update
 
--- ── FLOATING TEXT ─────────────────────────────────────────
+-- ── FLOATING TEXT ─────────────────────────────────────────────
 local function floatText(text, color)
     local char = player.Character
     if not char then return end
@@ -62,195 +62,13 @@ RE_Notify.OnClientEvent:Connect(function(title)
     end
 end)
 
-
--- ── MAGNET ────────────────────────────────────────────────
-local magnetRadius = 0
-
--- ── OWN MAGNET RING (cyan) ─────────────────────────────────
-local ringParts = {}
-
-local function clearRing()
-    for _, p in ipairs(ringParts) do pcall(function() p:Destroy() end) end
-    ringParts = {}
-end
-
-local function buildRing(cx, cy, cz, radius, col)
-    local N = 40
-    local r = radius
-    local tw = 0.45
-    local segArc = (2 * math.pi) / N
-    local segLen = 2 * r * math.sin(segArc / 2) + 0.05
-    for i = 0, N - 1 do
-        local a = i * segArc
-        local x = cx + math.cos(a) * r
-        local z = cz + math.sin(a) * r
-        local seg = Instance.new("Part")
-        seg.Anchored = true; seg.CanCollide = false; seg.CastShadow = false
-        seg.Size = Vector3.new(segLen, tw, tw)
-        seg.CFrame = CFrame.new(x, cy, z) * CFrame.Angles(0, -(a + math.pi/2), 0)
-        seg.Color = col or Color3.fromRGB(0, 220, 255)
-        seg.Material = Enum.Material.Neon
-        seg.Transparency = 0
-        seg.TopSurface = Enum.SurfaceType.Smooth
-        seg.BottomSurface = Enum.SurfaceType.Smooth
-        seg.Parent = workspace
-        table.insert(ringParts, seg)
-    end
-    return ringParts
-end
-
-local function updateRing()
-    clearRing()
-    if magnetRadius <= 0 then return end
-    local char = player.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    buildRing(hrp.Position.X, hrp.Position.Y - 2.8, hrp.Position.Z, magnetRadius, Color3.fromRGB(0, 220, 255))
-end
-
-local rayParams = RaycastParams.new()
-rayParams.FilterType = Enum.RaycastFilterType.Exclude
-
-RunService.Heartbeat:Connect(function()
-    if #ringParts == 0 then return end
-    local char = player.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
-    local exclude = {char}
-    for _, p in ipairs(ringParts) do table.insert(exclude, p) end
-    rayParams.FilterDescendantsInstances = exclude
-    local cx, cz = hrp.Position.X, hrp.Position.Z
-    local N = #ringParts
-    local r = magnetRadius
-    local segArc = (2 * math.pi) / N
-    for i, seg in ipairs(ringParts) do
-        local a = (i-1) * segArc
-        local sx = cx + math.cos(a) * r
-        local sz = cz + math.sin(a) * r
-        local hit = workspace:Raycast(Vector3.new(sx, hrp.Position.Y + 5, sz), Vector3.new(0,-20,0), rayParams)
-        local sy = hit and (hit.Position.Y + 0.08) or (hrp.Position.Y - 2.8)
-        seg.CFrame = CFrame.new(sx, sy, sz) * CFrame.Angles(0, -(a + math.pi/2), 0)
-    end
-end)
-
-local otherMagnetRings = {}  -- [userId] = {parts={}, lastSeen=tick(), pos, range}
-
-player.CharacterRemoving:Connect(function()
-    clearRing()
-    for uid, data in pairs(otherMagnetRings) do
-        for _, p in ipairs(data.parts or {}) do pcall(function() p:Destroy() end) end
-    end
-    otherMagnetRings = {}
-end)
-
 RE_Update.OnClientEvent:Connect(function(data)
     if not data or not data.upgrades then return end
-    local hasMegaMagnet = data._gp and data._gp.megaMagnet
-    local newRadius = 0
-    if hasMegaMagnet then
-        local lvl   = data.upgrades["coinMagnet"] or 0
-        newRadius   = (5 + lvl * 3) + 15
-    end
-    if newRadius ~= magnetRadius then
-        magnetRadius = newRadius
-        updateRing()
-    end
     local tsLvl = data.upgrades["touchSpeed"] or 0
     playerCooldown = math.max(1, 8 - tsLvl)
 end)
 
--- ── OTHER PLAYERS' MAGNET RINGS (pink/magenta) ───────────────
--- MagnetBroadcast_RE sends all active magnet players every 0.25s.
--- We render rings for everyone EXCEPT ourselves (already rendered above).
-
-local function buildOtherRing(uid, pos, range)
-    -- Clear old ring if it exists
-    local old = otherMagnetRings[uid]
-    if old then
-        for _, p in ipairs(old.parts or {}) do pcall(function() p:Destroy() end) end
-    end
-
-    local parts = {}
-    local N = 32
-    local r = range
-    local tw = 0.35
-    local segArc = (2 * math.pi) / N
-    local segLen = 2 * r * math.sin(segArc / 2) + 0.05
-    local cy = pos.Y - 2.8
-    for i = 0, N-1 do
-        local a = i * segArc
-        local x = pos.X + math.cos(a) * r
-        local z = pos.Z + math.sin(a) * r
-        local seg = Instance.new("Part")
-        seg.Anchored = true; seg.CanCollide = false; seg.CastShadow = false
-        seg.Size = Vector3.new(segLen, tw, tw)
-        seg.CFrame = CFrame.new(x, cy, z) * CFrame.Angles(0, -(a + math.pi/2), 0)
-        seg.Color = Color3.fromRGB(255, 60, 220)  -- pink/magenta for other players
-        seg.Material = Enum.Material.Neon
-        seg.Transparency = 0.3
-        seg.TopSurface = Enum.SurfaceType.Smooth
-        seg.BottomSurface = Enum.SurfaceType.Smooth
-        seg.Parent = workspace
-        table.insert(parts, seg)
-    end
-    otherMagnetRings[uid] = {parts = parts, lastSeen = tick(), pos = pos, range = range}
-end
-
--- Update other-player ring positions every heartbeat
-RunService.Heartbeat:Connect(function()
-    for uid, data in pairs(otherMagnetRings) do
-        -- Remove stale rings (not seen in >1s = player moved away / lost magnet)
-        if tick() - data.lastSeen > 1.0 then
-            for _, p in ipairs(data.parts or {}) do pcall(function() p:Destroy() end) end
-            otherMagnetRings[uid] = nil
-        end
-    end
-end)
-
-MagnetBroadcastRE.OnClientEvent:Connect(function(magnetData)
-    local myUid = player.UserId
-    for _, entry in ipairs(magnetData) do
-        if entry.userId ~= myUid then
-            -- Update or create ring for this player
-            local existing = otherMagnetRings[entry.userId]
-            local needRebuild = not existing
-                or math.abs(existing.range - entry.range) > 0.5
-                or (existing.pos - entry.pos).Magnitude > 3
-
-            if needRebuild then
-                buildOtherRing(entry.userId, entry.pos, entry.range)
-            else
-                -- Just update lastSeen and move the parts
-                existing.lastSeen = tick()
-                local pos = entry.pos
-                local N = #existing.parts
-                local r = existing.range
-                local segArc = (2 * math.pi) / N
-                local cy = pos.Y - 2.8
-                for i, seg in ipairs(existing.parts) do
-                    local a = (i-1) * segArc
-                    local sx = pos.X + math.cos(a) * r
-                    local sz = pos.Z + math.sin(a) * r
-                    seg.CFrame = CFrame.new(sx, cy, sz) * CFrame.Angles(0, -(a + math.pi/2), 0)
-                end
-                existing.pos = pos
-            end
-        end
-    end
-    -- Clear rings for players no longer in the broadcast
-    local activeIds = {}
-    for _, entry in ipairs(magnetData) do activeIds[entry.userId] = true end
-    for uid, data in pairs(otherMagnetRings) do
-        if not activeIds[uid] then
-            for _, p in ipairs(data.parts or {}) do pcall(function() p:Destroy() end) end
-            otherMagnetRings[uid] = nil
-        end
-    end
-end)
-
--- ── COIN GLOW (client-side SelectionBox on geyser coins) ─────
+-- ── COIN GLOW (SelectionBox on geyser coins) ──────────────────
 local camera = workspace.CurrentCamera
 local function addCoinGlow(coin)
     local sel = Instance.new("SelectionBox")
@@ -282,8 +100,7 @@ local function getGeyserCoins()
 end
 
 task.delay(2, function()
-    local coins = getGeyserCoins()
-
+    getGeyserCoins()
     local map = workspace:FindFirstChild("MoneyIslandMap")
     if map then
         local farm = map:FindFirstChild("FarmZone")
@@ -292,76 +109,18 @@ task.delay(2, function()
             if models then
                 models.ChildAdded:Connect(function(c)
                     if c:IsA("Part") and c:GetAttribute("GeyserCoin") then
-                        table.insert(coins, c)
                         addCoinGlow(c)
                     end
                 end)
             end
         end
     end
-
-    local magnetLocked = {}
-
-    RunService.Heartbeat:Connect(function()
-        if magnetRadius <= 0 then return end
-        local char = player.Character
-        if not char then return end
-        local hrp = char:FindFirstChild("HumanoidRootPart")
-        if not hrp then return end
-        local playerPos = hrp.Position
-
-        for _, coin in ipairs(coins) do
-            if not coin.Parent then continue end
-            if magnetLocked[coin] then continue end
-
-            local dist = (coin.Position - playerPos).Magnitude
-            if dist <= magnetRadius then
-                magnetLocked[coin] = true
-
-                -- ── BUG FIX: immediately hide the original coin so it doesn't
-                --    linger on the floor while waiting for server destruction.
-                coin.Transparency = 1
-                coin.CanCollide   = false
-
-                MagnetRE:FireServer(coin)
-
-                task.spawn(function()
-                    local clone = coin:Clone()
-                    clone.Transparency = 0  -- clone is visible for animation
-                    clone.Parent = workspace
-                    clone.CanCollide = false
-                    TweenService:Create(clone,
-                        TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.In),
-                        {CFrame = CFrame.new(playerPos + Vector3.new(0,2,0))
-                            * CFrame.Angles(0,0,math.rad(90))}):Play()
-                    task.wait(0.16)
-                    clone:Destroy()
-                    -- Wait for server to destroy the real coin; if it doesn't (rejected),
-                    -- restore visibility so the player can try again.
-                    local t = 0
-                    while t < 1.5 do
-                        task.wait(0.05); t = t + 0.05
-                        if not coin.Parent then break end
-                    end
-                    -- If coin still exists but server rejected (geyser cap), show it again
-                    if coin.Parent then
-                        coin.Transparency = 0
-                        coin.CanCollide   = true
-                    end
-                    magnetLocked[coin] = nil
-                end)
-            end
-        end
-    end)
 end)
 
 -- ── MULTI-WEAPON PvP CLIENT ───────────────────────────────────
-local UserInputService = game:GetService("UserInputService")
-local Debris           = game:GetService("Debris")
-
 local WEAPON_DATA = {
-    CoinBlade     = {range=8,  col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false, cooldown=1.2},
-    CoinSword     = {range=8,  col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false, cooldown=1.2},
+    CoinBlade     = {range=10, col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false, cooldown=1.2},
+    CoinSword     = {range=10, col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false, cooldown=1.2},
     LaserStaff    = {range=55, col=Color3.fromRGB(80,160,255), isAoE=false, isProj=true,  cooldown=2.0},
     ThunderHammer = {range=14, col=Color3.fromRGB(255,255,60), isAoE=true,  isProj=false, cooldown=4.0},
     ShadowBlade   = {range=11, col=Color3.fromRGB(160,40,255), isAoE=false, isProj=false, cooldown=1.6},
@@ -374,7 +133,6 @@ local equippedWeaponName   = nil
 
 -- ── VFX helpers ───────────────────────────────────────────────
 local function showSlashVFX(hrpCFrame, col)
-    -- Main wide arc
     local slash = Instance.new("Part")
     slash.Anchored = true; slash.CanCollide = false; slash.CastShadow = false
     slash.Size = Vector3.new(0.5, 3, 10); slash.Material = Enum.Material.Neon
@@ -383,7 +141,7 @@ local function showSlashVFX(hrpCFrame, col)
     TweenService:Create(slash, TweenInfo.new(0.3, Enum.EasingStyle.Quad),
         {Transparency=1, Size=Vector3.new(0.1,1.5,13)}):Play()
     Debris:AddItem(slash, 0.35)
-    -- Second thinner trailing slash
+    -- Trailing slash
     local slash2 = Instance.new("Part")
     slash2.Anchored = true; slash2.CanCollide = false; slash2.CastShadow = false
     slash2.Size = Vector3.new(0.3, 2, 8); slash2.Material = Enum.Material.Neon
@@ -392,10 +150,20 @@ local function showSlashVFX(hrpCFrame, col)
     slash2.Parent = workspace
     TweenService:Create(slash2, TweenInfo.new(0.25), {Transparency=1}):Play()
     Debris:AddItem(slash2, 0.3)
+    -- Gold hit-ring that expands at the blade tip
+    local ring = Instance.new("Part")
+    ring.Anchored = true; ring.CanCollide = false; ring.CastShadow = false
+    ring.Shape = Enum.PartType.Cylinder
+    ring.Size = Vector3.new(1, 0.3, 1); ring.Material = Enum.Material.Neon
+    ring.Color = col or Color3.fromRGB(255,215,0); ring.Transparency = 0.1
+    ring.CFrame = hrpCFrame * CFrame.new(0, 0, -6) * CFrame.Angles(0, 0, math.rad(90))
+    ring.Parent = workspace
+    TweenService:Create(ring, TweenInfo.new(0.25, Enum.EasingStyle.Quad),
+        {Size=Vector3.new(1,6,6), Transparency=1}):Play()
+    Debris:AddItem(ring, 0.3)
 end
 
 local function showProjectileVFX(origin, direction, col)
-    -- Fat glowing bolt
     local bolt = Instance.new("Part")
     bolt.Anchored = true; bolt.CanCollide = false; bolt.CastShadow = false
     bolt.Size = Vector3.new(0.7, 0.7, 4); bolt.Material = Enum.Material.Neon
@@ -406,7 +174,6 @@ local function showProjectileVFX(origin, direction, col)
     TweenService:Create(bolt, TweenInfo.new(0.35, Enum.EasingStyle.Linear),
         {CFrame = CFrame.new(target, target + direction), Transparency = 0.5}):Play()
     Debris:AddItem(bolt, 0.4)
-    -- Glow corona around the bolt
     local glow = Instance.new("Part")
     glow.Anchored = true; glow.CanCollide = false; glow.CastShadow = false
     glow.Size = Vector3.new(1.4, 1.4, 5); glow.Material = Enum.Material.Neon
@@ -418,7 +185,6 @@ local function showProjectileVFX(origin, direction, col)
 end
 
 local function showAoEVFX(pos, range, col)
-    -- Expanding shockwave ring
     local ring = Instance.new("Part")
     ring.Anchored = true; ring.CanCollide = false; ring.CastShadow = false
     ring.Size = Vector3.new(2, 0.6, 2); ring.Material = Enum.Material.Neon
@@ -429,7 +195,6 @@ local function showAoEVFX(pos, range, col)
     TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad),
         {Size = Vector3.new(range*2+12, 0.2, range*2+12), Transparency = 1}):Play()
     Debris:AddItem(ring, 0.6)
-    -- Lightning spikes upward
     for i = 1, 5 do
         local spike = Instance.new("Part")
         spike.Anchored = true; spike.CanCollide = false; spike.CastShadow = false
@@ -454,7 +219,6 @@ local function showShadowFlash(hrpCFrame)
         TweenService:Create(flash, TweenInfo.new(0.3), {Transparency = 1, Size=Vector3.new(0.1,6,0.1)}):Play()
         Debris:AddItem(flash, 0.35)
     end
-    -- Dark ring at feet
     local ring = Instance.new("Part")
     ring.Anchored = true; ring.CanCollide = false; ring.CastShadow = false
     ring.Size = Vector3.new(3,0.3,3); ring.Material = Enum.Material.Neon
@@ -479,13 +243,12 @@ local function showBlockShield(char)
     local weld = Instance.new("Weld", shield)
     weld.Part0 = hrp; weld.Part1 = shield; weld.C0 = CFrame.new(0,0,0)
     activeBlockShield = shield
-    -- Fade and destroy after 2s
     TweenService:Create(shield, TweenInfo.new(1.8, Enum.EasingStyle.Quad), {Transparency=1}):Play()
     Debris:AddItem(shield, 2.1)
     task.delay(2.1, function() if activeBlockShield == shield then activeBlockShield = nil end end)
 end
 
--- ── Hit detection ─────────────────────────────────────────────
+-- ── Hit detection ──────────────────────────────────────────────
 local function findEnemiesInRange(hrp, range, isAoE)
     local results = {}
     for _, p in ipairs(Players:GetPlayers()) do
@@ -495,10 +258,9 @@ local function findEnemiesInRange(hrp, range, isAoE)
         local d = (ohrp.Position - hrp.Position).Magnitude
         if d <= range then
             table.insert(results, p)
-            if not isAoE then break end  -- melee only hits nearest
+            if not isAoE then break end
         end
     end
-    -- For non-AoE, return only closest
     if not isAoE and #results > 1 then
         table.sort(results, function(a, b)
             local ap = a.Character and a.Character:FindFirstChild("HumanoidRootPart")
@@ -519,7 +281,6 @@ local function onWeaponActivated(weaponId)
 
     weaponCooldownActive = true
 
-    -- Per-weapon VFX
     if wdata.isProj then
         local fwd = hrp.CFrame.LookVector
         showProjectileVFX(hrp.Position + Vector3.new(0,1,0), fwd, wdata.col)
@@ -546,7 +307,7 @@ local function onWeaponActivated(weaponId)
     end)
 end
 
--- ── Weapon attachment ─────────────────────────────────────────
+-- ── Weapon attachment ──────────────────────────────────────────
 local function attachWeaponListeners(char)
     if not char then return end
     local function tryBind(tool)
@@ -570,7 +331,6 @@ player.CharacterAdded:Connect(function(char)
     attachWeaponListeners(char)
 end)
 
--- Reset cooldown when AbilityCooldown_RE fires (server confirmed action)
 AbilityCooldownRE.OnClientEvent:Connect(function(abilityName, cd)
     if abilityName == "Weapon" then
         task.delay(cd, function() weaponCooldownActive = false end)
@@ -584,7 +344,6 @@ local blockCooldown = false
 local function showDashTrail(startPos, endPos)
     local mid = (startPos + endPos) / 2
     local len = math.max(1, (endPos - startPos).Magnitude)
-    -- Core bright trail
     local trail = Instance.new("Part")
     trail.Anchored = true; trail.CanCollide = false; trail.CastShadow = false
     trail.Size = Vector3.new(1.2, 1.2, len); trail.Material = Enum.Material.Neon
@@ -592,7 +351,6 @@ local function showDashTrail(startPos, endPos)
     trail.CFrame = CFrame.new(mid, endPos); trail.Parent = workspace
     TweenService:Create(trail, TweenInfo.new(0.35), {Transparency = 1, Size=Vector3.new(0.1,0.1,len)}):Play()
     Debris:AddItem(trail, 0.4)
-    -- Wide glow halo
     local halo = Instance.new("Part")
     halo.Anchored = true; halo.CanCollide = false; halo.CastShadow = false
     halo.Size = Vector3.new(2.5, 2.5, len); halo.Material = Enum.Material.Neon
@@ -611,7 +369,6 @@ UserInputService.InputBegan:Connect(function(input, gpe)
         dashCooldown = true
         local startPos = hrp.Position
         UseAbilityRE:FireServer("dash")
-        -- Visual trail after a short delay (server teleports character, then we draw)
         task.delay(0.08, function()
             if hrp.Parent then showDashTrail(startPos, hrp.Position) end
         end)
@@ -628,4 +385,4 @@ UserInputService.InputBegan:Connect(function(input, gpe)
     end
 end)
 
-print("[MoneyIsland] CoinSpin: ready (v3 — multi-weapon, dash/block, AoE/projectile VFX)")
+print("[MoneyIsland] CoinSpin v4: weapon PvP + coin glow (magnet removed)")

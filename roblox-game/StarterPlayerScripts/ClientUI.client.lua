@@ -97,6 +97,12 @@ local shopOpen     = false
 local lastRebirths = -1
 local machineRates = {}  -- [plotId] = {coinVal, cd}
 
+-- Ability cooldown state (tracked here so Heartbeat can access them)
+local dashCdEnd  = 0   -- os.clock() when dash cooldown expires
+local blockCdEnd = 0
+local DASH_CD    = 8
+local BLOCK_CD   = 15
+
 -- ── FORMAT ───────────────────────────────────────────────
 local function fmt(n)
     if n>=1e9 then return string.format("%.1fB",n/1e9)
@@ -650,48 +656,107 @@ end)
 
 -- ── ABILITY COOLDOWN DISPLAY ──────────────────────────────
 local abilityBar = Instance.new("Frame", sg)
-abilityBar.Size = UDim2.new(0, 200, 0, 22); abilityBar.Position = UDim2.new(0, 10, 1, -265)
-abilityBar.BackgroundColor3 = Color3.fromRGB(10,8,22); abilityBar.BorderSizePixel = 0
+abilityBar.Size = UDim2.new(0, 214, 0, 52); abilityBar.Position = UDim2.new(0, 10, 1, -279)
+abilityBar.BackgroundTransparency = 1; abilityBar.BorderSizePixel = 0
 abilityBar.Visible = false
-Instance.new("UICorner", abilityBar).CornerRadius = UDim.new(0, 6)
-local abStroke = Instance.new("UIStroke", abilityBar)
-abStroke.Color = Color3.fromRGB(80,120,255); abStroke.Thickness = 1.2
 
-local dashLbl = Instance.new("TextLabel", abilityBar)
-dashLbl.Size = UDim2.new(0.5,0,1,0); dashLbl.BackgroundTransparency = 1
-dashLbl.Text = "Q Dash ✓"; dashLbl.Font = Enum.Font.GothamBold; dashLbl.TextSize = 10
-dashLbl.TextColor3 = Color3.fromRGB(100,200,255)
+-- Dash row
+local dashRow = Instance.new("Frame", abilityBar)
+dashRow.Size = UDim2.new(1,0,0,22); dashRow.Position = UDim2.new(0,0,0,0)
+dashRow.BackgroundColor3 = Color3.fromRGB(10,8,22); dashRow.BorderSizePixel = 0
+Instance.new("UICorner", dashRow).CornerRadius = UDim.new(0,6)
+local dashStroke = Instance.new("UIStroke", dashRow)
+dashStroke.Color = Color3.fromRGB(80,160,255); dashStroke.Thickness = 1.2
 
-local blockLbl = Instance.new("TextLabel", abilityBar)
-blockLbl.Size = UDim2.new(0.5,0,1,0); blockLbl.Position = UDim2.new(0.5,0,0,0)
-blockLbl.BackgroundTransparency = 1
-blockLbl.Text = "E Block ✓"; blockLbl.Font = Enum.Font.GothamBold; blockLbl.TextSize = 10
-blockLbl.TextColor3 = Color3.fromRGB(255,200,80)
+local dashKeyLbl = Instance.new("TextLabel", dashRow)
+dashKeyLbl.Size = UDim2.new(0,46,1,0); dashKeyLbl.BackgroundTransparency = 1
+dashKeyLbl.Text = "Q DASH"; dashKeyLbl.Font = Enum.Font.GothamBold; dashKeyLbl.TextSize = 9
+dashKeyLbl.TextColor3 = Color3.fromRGB(100,200,255)
+
+local dashFillBg = Instance.new("Frame", dashRow)
+dashFillBg.Size = UDim2.new(1,-86,1,-6); dashFillBg.Position = UDim2.new(0,46,0,3)
+dashFillBg.BackgroundColor3 = Color3.fromRGB(25,25,55); dashFillBg.BorderSizePixel = 0
+Instance.new("UICorner", dashFillBg).CornerRadius = UDim.new(1,0)
+local dashFill = Instance.new("Frame", dashFillBg)
+dashFill.Size = UDim2.new(1,0,1,0); dashFill.BackgroundColor3 = Color3.fromRGB(80,180,255)
+dashFill.BorderSizePixel = 0
+Instance.new("UICorner", dashFill).CornerRadius = UDim.new(1,0)
+
+local dashTimeLbl = Instance.new("TextLabel", dashRow)
+dashTimeLbl.Size = UDim2.new(0,36,1,0); dashTimeLbl.Position = UDim2.new(1,-36,0,0)
+dashTimeLbl.BackgroundTransparency = 1; dashTimeLbl.Text = "READY"
+dashTimeLbl.Font = Enum.Font.GothamBold; dashTimeLbl.TextSize = 9
+dashTimeLbl.TextColor3 = Color3.fromRGB(100,200,255)
+dashTimeLbl.TextXAlignment = Enum.TextXAlignment.Right
+
+-- Block row
+local blockRow = Instance.new("Frame", abilityBar)
+blockRow.Size = UDim2.new(1,0,0,22); blockRow.Position = UDim2.new(0,0,0,28)
+blockRow.BackgroundColor3 = Color3.fromRGB(10,8,22); blockRow.BorderSizePixel = 0
+Instance.new("UICorner", blockRow).CornerRadius = UDim.new(0,6)
+local blockStroke = Instance.new("UIStroke", blockRow)
+blockStroke.Color = Color3.fromRGB(255,180,40); blockStroke.Thickness = 1.2
+
+local blockKeyLbl = Instance.new("TextLabel", blockRow)
+blockKeyLbl.Size = UDim2.new(0,50,1,0); blockKeyLbl.BackgroundTransparency = 1
+blockKeyLbl.Text = "E BLOCK"; blockKeyLbl.Font = Enum.Font.GothamBold; blockKeyLbl.TextSize = 9
+blockKeyLbl.TextColor3 = Color3.fromRGB(255,200,80)
+
+local blockFillBg = Instance.new("Frame", blockRow)
+blockFillBg.Size = UDim2.new(1,-90,1,-6); blockFillBg.Position = UDim2.new(0,50,0,3)
+blockFillBg.BackgroundColor3 = Color3.fromRGB(25,25,55); blockFillBg.BorderSizePixel = 0
+Instance.new("UICorner", blockFillBg).CornerRadius = UDim.new(1,0)
+local blockFill = Instance.new("Frame", blockFillBg)
+blockFill.Size = UDim2.new(1,0,1,0); blockFill.BackgroundColor3 = Color3.fromRGB(255,200,60)
+blockFill.BorderSizePixel = 0
+Instance.new("UICorner", blockFill).CornerRadius = UDim.new(1,0)
+
+local blockTimeLbl = Instance.new("TextLabel", blockRow)
+blockTimeLbl.Size = UDim2.new(0,36,1,0); blockTimeLbl.Position = UDim2.new(1,-36,0,0)
+blockTimeLbl.BackgroundTransparency = 1; blockTimeLbl.Text = "READY"
+blockTimeLbl.Font = Enum.Font.GothamBold; blockTimeLbl.TextSize = 9
+blockTimeLbl.TextColor3 = Color3.fromRGB(255,200,80)
+blockTimeLbl.TextXAlignment = Enum.TextXAlignment.Right
+
+-- Heartbeat: count down the bars smoothly
+RunService.Heartbeat:Connect(function()
+    local now2 = os.clock()
+    if dashCdEnd > 0 then
+        local rem = math.max(0, dashCdEnd - now2)
+        local pct = 1 - rem / DASH_CD
+        dashFill.Size = UDim2.new(math.clamp(pct,0,1), 0, 1, 0)
+        if rem > 0 then
+            dashTimeLbl.Text = string.format("%.1fs", rem)
+            dashTimeLbl.TextColor3 = Color3.fromRGB(100,100,140)
+            dashKeyLbl.TextColor3  = Color3.fromRGB(100,100,140)
+        else
+            dashTimeLbl.Text = "READY"; dashTimeLbl.TextColor3 = Color3.fromRGB(100,200,255)
+            dashKeyLbl.TextColor3 = Color3.fromRGB(100,200,255)
+            dashFill.Size = UDim2.new(1,0,1,0)
+        end
+    end
+    if blockCdEnd > 0 then
+        local rem = math.max(0, blockCdEnd - now2)
+        local pct = 1 - rem / BLOCK_CD
+        blockFill.Size = UDim2.new(math.clamp(pct,0,1), 0, 1, 0)
+        if rem > 0 then
+            blockTimeLbl.Text = string.format("%.1fs", rem)
+            blockTimeLbl.TextColor3 = Color3.fromRGB(140,120,60)
+            blockKeyLbl.TextColor3  = Color3.fromRGB(140,120,60)
+        else
+            blockTimeLbl.Text = "READY"; blockTimeLbl.TextColor3 = Color3.fromRGB(255,200,80)
+            blockKeyLbl.TextColor3 = Color3.fromRGB(255,200,80)
+            blockFill.Size = UDim2.new(1,0,1,0)
+        end
+    end
+end)
 
 RE_AbilityCD.OnClientEvent:Connect(function(abilityName, cooldown)
     abilityBar.Visible = true
-    if abilityName == "Dash" then
-        if cooldown > 0 then
-            dashLbl.Text = "Q " .. math.ceil(cooldown) .. "s"
-            dashLbl.TextColor3 = Color3.fromRGB(100,100,140)
-            task.delay(cooldown, function()
-                dashLbl.Text = "Q Dash ✓"
-                dashLbl.TextColor3 = Color3.fromRGB(100,200,255)
-            end)
-        else
-            dashLbl.Text = "Q Dash ✓"; dashLbl.TextColor3 = Color3.fromRGB(100,200,255)
-        end
-    elseif abilityName == "Block" then
-        if cooldown > 0 then
-            blockLbl.Text = "E " .. math.ceil(cooldown) .. "s"
-            blockLbl.TextColor3 = Color3.fromRGB(140,120,60)
-            task.delay(cooldown, function()
-                blockLbl.Text = "E Block ✓"
-                blockLbl.TextColor3 = Color3.fromRGB(255,200,80)
-            end)
-        else
-            blockLbl.Text = "E Block ✓"; blockLbl.TextColor3 = Color3.fromRGB(255,200,80)
-        end
+    if abilityName == "dash" then
+        dashCdEnd = os.clock() + cooldown
+    elseif abilityName == "block" then
+        blockCdEnd = os.clock() + cooldown
     end
 end)
 
@@ -1194,17 +1259,9 @@ local function buildShop(data,upgrades)
         local effectText
         if upg.key=="touchSpeed" then
             effectText = "Now: "..(math.max(1,8-level)).."s recharge"
-        elseif upg.key=="coinMagnet" then
-            if not gp.megaMagnet then
-                effectText = "🔒 Requires Mega Magnet gamepass"
-            else
-                local range = (5 + level * 3) + 15
-                effectText  = "Range: "..range.." studs (+15 from pass)"
-            end
         elseif upg.key=="coinValue" then
             local mult = 1 + level*0.5
-            if gp.doubleCoin then mult = mult * 2 end
-            effectText = string.format("Value: %.1fx", mult)..(gp.doubleCoin and " (×2 pass)" or "")
+            effectText = string.format("Value: %.1fx", mult)
         else effectText = "" end
 
         local ef=Instance.new("TextLabel",card); ef.Size=UDim2.new(0,195,0,14)
@@ -1324,16 +1381,15 @@ local function openPrestige()
     local old2=sg:FindFirstChild("PrestigePanel")
     if old2 then old2:Destroy() return end
 
-    local gp       = (currentData and currentData._gp) or {}
     local rebirths = (currentData and currentData.rebirths) or 0
-    -- New cost: 3000 × 2^rebirths
-    local cost     = math.floor(3000 * (2 ^ rebirths))
+    -- Cost: 100000 × 3^rebirths — matches server formula
+    local cost     = math.floor(100000 * (3 ^ rebirths))
     local coins    = (currentData and currentData.coins) or 0
     local canDo    = coins >= cost
-    local multStr  = gp.prestigeBoost and "3x" or "2x"
+    local multStr  = "2x"
 
-    local curPow  = math.floor((gp.prestigeBoost and 3 or 2) ^ rebirths)
-    local nextPow = math.floor((gp.prestigeBoost and 3 or 2) ^ (rebirths + 1))
+    local curPow  = math.floor(2 ^ rebirths)
+    local nextPow = math.floor(2 ^ (rebirths + 1))
 
     -- What upgrades the player currently has and would keep 25%
     local upgStr = ""
@@ -1419,14 +1475,6 @@ local PRODUCTS={
     {id=3586040263,label="💰 2,500 Coins",  price="R$199"},
     {id=3586040422,label="💰 10,000 Coins", price="R$699"},
 }
-local PASSES={
-    {id=1821720069, gpKey="doubleCoin",    label="💰 2x Coins — all coins doubled",       price="R$499"},
-    {id=1822515059, gpKey="megaMagnet",    label="🧲 Mega Magnet — enables coin magnet!",  price="R$349"},
-    {id=1821659972, gpKey="luckyCharm",    label="🍀 Lucky Charm — 2x jackpot chance",    price="R$199"},
-    {id=1822655551, gpKey="speedDemon",    label="⚡ Speed Demon — +20% walk speed",      price="R$199"},
-    {id=1822649609, gpKey="prestigeBoost", label="🏆 Prestige Boost — 3x per prestige",   price="R$349"},
-    {id=1823064828, gpKey="autoFarm",      label="🤖 Auto Farm — 2x plot tick speed",     price="R$699"},
-}
 
 local function openRobuxShop()
     local old2=sg:FindFirstChild("RobuxShop")
@@ -1469,19 +1517,6 @@ local function openRobuxShop()
         row(p.label, p.price,
             function() MarketplaceService:PromptProductPurchase(player,pid) end,
             Color3.fromRGB(16,48,16), nil)
-    end
-
-    sec("BOOSTS (permanent)")
-    for _,gp in ipairs(PASSES) do
-        local gpid   = gp.id
-        local owned  = ownedGP[gp.gpKey] == true
-        local bgCol  = owned and Color3.fromRGB(10,38,10) or Color3.fromRGB(16,16,52)
-        local priceCol = owned and Color3.fromRGB(0,210,90) or Color3.fromRGB(255,215,0)
-        local priceStr = owned and "✓ OWNED" or gp.price
-        local cb = owned
-            and function() end
-            or  function() MarketplaceService:PromptGamePassPurchase(player,gpid) end
-        row(gp.label, priceStr, cb, bgCol, priceCol)
     end
 
     panel.Size=UDim2.new(0,400,0,y+12); panel.Position=UDim2.new(0.5,-200,0.5,-(y+12)/2)
@@ -1531,8 +1566,7 @@ local function openStats()
     local cvLvl = (data.upgrades and data.upgrades.coinValue) or 0
     local streak = data.prestigeStreak or 0
     local mult  = (1 + cvLvl*0.5)
-                  * (gp.doubleCoin and 2 or 1)
-                  * ((gp.prestigeBoost and 3 or 2) ^ (data.rebirths or 0))
+                  * (2 ^ (data.rebirths or 0))
                   * (1 + 0.1 * math.min(streak, 5))
     local coinVal = math.floor(30 * mult)
     local cd  = math.max(1, 8 - ((data.upgrades and data.upgrades.touchSpeed) or 0))
@@ -1547,9 +1581,8 @@ local function openStats()
         {"⏱  Play Time",        timeStr},
         {"📈 Plot Income/min",   plotCount>0 and "~"..fmt(plotIncome) or "Buy plots!"},
         {"💎 Coin Value",        fmt(coinVal).." ea"},
-        {"⚔️ Prestige Cost",     fmt(math.floor(3000 * (2 ^ (data.rebirths or 0))))},
+        {"⚔️ Prestige Cost",     fmt(math.floor(100000 * (3 ^ (data.rebirths or 0))))},
     }
-    if gp.autoFarm then table.insert(stats, {"🤖 Auto Farm", "2× plot speed"}) end
 
     local rowH = 32
     for i, row in ipairs(stats) do
