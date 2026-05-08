@@ -14,7 +14,10 @@ local RE_Notify = ReplicatedStorage:WaitForChild("NotifyPlayer",      30)
 local RE_Update = ReplicatedStorage:WaitForChild("UpdateStats",       30)
 local MagnetRE  = ReplicatedStorage:WaitForChild("MagnetCollect",     30)
 local MagnetBroadcastRE = ReplicatedStorage:WaitForChild("MagnetBroadcast_RE", 30)
-local SwordHitRE        = ReplicatedStorage:WaitForChild("SwordHit_RE",       30)
+local WeaponHitRE       = ReplicatedStorage:WaitForChild("WeaponHit_RE",      30)
+local UseAbilityRE      = ReplicatedStorage:WaitForChild("UseAbility_RE",     30)
+local AbilityCooldownRE = ReplicatedStorage:WaitForChild("AbilityCooldown_RE",30)
+local SwordHitRE        = WeaponHitRE  -- backward compat alias
 
 local playerCooldown = 8  -- kept in sync with server TICK_BASE via RE_Update
 
@@ -352,93 +355,200 @@ task.delay(2, function()
     end)
 end)
 
--- ── SWORD PvP CLIENT ──────────────────────────────────────────
--- Detects when CoinSword tool is equipped, handles Activated (click/tap)
--- to find the closest enemy player in range and fire SwordHit_RE to server.
+-- ── MULTI-WEAPON PvP CLIENT ───────────────────────────────────
+local UserInputService = game:GetService("UserInputService")
+local Debris           = game:GetService("Debris")
 
-local swingSFX = Instance.new("Sound", script)
-swingSFX.Volume = 0.6; swingSFX.PlaybackSpeed = 1.1
--- swingSFX.SoundId = "rbxassetid://0"  -- replace with a sword swing audio ID
+local WEAPON_DATA = {
+    CoinBlade     = {range=8,  col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false},
+    CoinSword     = {range=8,  col=Color3.fromRGB(255,215,0),  isAoE=false, isProj=false},
+    LaserStaff    = {range=55, col=Color3.fromRGB(80,160,255), isAoE=false, isProj=true},
+    ThunderHammer = {range=14, col=Color3.fromRGB(255,255,60), isAoE=true,  isProj=false},
+    ShadowBlade   = {range=11, col=Color3.fromRGB(160,40,255), isAoE=false, isProj=false},
+}
+local WEAPON_NAMES_SET = {}
+for k in pairs(WEAPON_DATA) do WEAPON_NAMES_SET[k] = true end
 
-local swordCooldownActive = false
-local SWORD_RANGE         = 10  -- studs
+local weaponCooldownActive = false
+local equippedWeaponName   = nil
 
-local function showSlashVFX(hrpCFrame)
-    -- A brief golden arc that expands and fades
+-- ── VFX helpers ───────────────────────────────────────────────
+local function showSlashVFX(hrpCFrame, col)
     local slash = Instance.new("Part")
-    slash.Anchored    = true
-    slash.CanCollide  = false
-    slash.CastShadow  = false
-    slash.Size        = Vector3.new(0.3, 1.5, 7)
-    slash.Material    = Enum.Material.Neon
-    slash.Color       = Color3.fromRGB(255, 220, 50)
-    slash.Transparency = 0
-    slash.CFrame      = hrpCFrame * CFrame.new(0, 1, -3.5)
-    slash.Parent      = workspace
-
+    slash.Anchored = true; slash.CanCollide = false; slash.CastShadow = false
+    slash.Size = Vector3.new(0.3, 1.5, 7); slash.Material = Enum.Material.Neon
+    slash.Color = col or Color3.fromRGB(255,220,50); slash.Transparency = 0
+    slash.CFrame = hrpCFrame * CFrame.new(0, 1, -3.5); slash.Parent = workspace
     TweenService:Create(slash, TweenInfo.new(0.3, Enum.EasingStyle.Quad),
-        {Transparency = 1, Size = Vector3.new(0.1, 0.8, 9)}):Play()
-    game:GetService("Debris"):AddItem(slash, 0.35)
+        {Transparency=1, Size=Vector3.new(0.1,0.8,9)}):Play()
+    Debris:AddItem(slash, 0.35)
 end
 
-local function findNearestEnemy(hrp)
-    local nearest, nearestDist = nil, SWORD_RANGE
+local function showProjectileVFX(origin, direction, col)
+    local bolt = Instance.new("Part")
+    bolt.Anchored = true; bolt.CanCollide = false; bolt.CastShadow = false
+    bolt.Size = Vector3.new(0.4, 0.4, 2.5); bolt.Material = Enum.Material.Neon
+    bolt.Color = col or Color3.fromRGB(80,160,255); bolt.Transparency = 0
+    bolt.CFrame = CFrame.new(origin, origin + direction) * CFrame.new(0, 0, -1)
+    bolt.Parent = workspace
+    local target = origin + direction.Unit * 55
+    TweenService:Create(bolt, TweenInfo.new(0.45, Enum.EasingStyle.Linear),
+        {CFrame = CFrame.new(target, target + direction), Transparency = 0.6}):Play()
+    Debris:AddItem(bolt, 0.5)
+end
+
+local function showAoEVFX(pos, range, col)
+    local ring = Instance.new("Part")
+    ring.Anchored = true; ring.CanCollide = false; ring.CastShadow = false
+    ring.Size = Vector3.new(range*2, 0.5, range*2); ring.Material = Enum.Material.Neon
+    ring.Shape = Enum.PartType.Cylinder
+    ring.Color = col or Color3.fromRGB(255,255,60); ring.Transparency = 0.3
+    ring.CFrame = CFrame.new(pos.X, pos.Y+0.3, pos.Z) * CFrame.Angles(0,0,math.rad(90))
+    ring.Parent = workspace
+    TweenService:Create(ring, TweenInfo.new(0.5, Enum.EasingStyle.Quad),
+        {Size = Vector3.new(range*2+8, 0.2, range*2+8), Transparency = 1}):Play()
+    Debris:AddItem(ring, 0.6)
+end
+
+local function showShadowFlash(hrpCFrame)
+    for i = 1, 3 do
+        local flash = Instance.new("Part")
+        flash.Anchored = true; flash.CanCollide = false; flash.CastShadow = false
+        flash.Size = Vector3.new(2, 4, 0.3); flash.Material = Enum.Material.Neon
+        flash.Color = Color3.fromRGB(160, 40, 255); flash.Transparency = 0.2
+        flash.CFrame = hrpCFrame * CFrame.new(math.random(-2,2), 0, -3 - i) * CFrame.Angles(0, math.rad(i*20), 0)
+        flash.Parent = workspace
+        TweenService:Create(flash, TweenInfo.new(0.25), {Transparency = 1}):Play()
+        Debris:AddItem(flash, 0.3)
+    end
+end
+
+-- ── Hit detection ─────────────────────────────────────────────
+local function findEnemiesInRange(hrp, range, isAoE)
+    local results = {}
     for _, p in ipairs(Players:GetPlayers()) do
         if p == player then continue end
-        local c = p.Character
-        if not c then continue end
-        local ohrp = c:FindFirstChild("HumanoidRootPart")
-        if not ohrp then continue end
+        local c = p.Character; if not c then continue end
+        local ohrp = c:FindFirstChild("HumanoidRootPart"); if not ohrp then continue end
         local d = (ohrp.Position - hrp.Position).Magnitude
-        if d < nearestDist then
-            nearest    = p
-            nearestDist = d
+        if d <= range then
+            table.insert(results, p)
+            if not isAoE then break end  -- melee only hits nearest
         end
     end
-    return nearest
+    -- For non-AoE, return only closest
+    if not isAoE and #results > 1 then
+        table.sort(results, function(a, b)
+            local ap = a.Character and a.Character:FindFirstChild("HumanoidRootPart")
+            local bp = b.Character and b.Character:FindFirstChild("HumanoidRootPart")
+            if not ap or not bp then return false end
+            return (ap.Position-hrp.Position).Magnitude < (bp.Position-hrp.Position).Magnitude
+        end)
+        return {results[1]}
+    end
+    return results
 end
 
-local function onSwordActivated()
-    if swordCooldownActive then return end
-    local char = player.Character
-    if not char then return end
-    local hrp = char:FindFirstChild("HumanoidRootPart")
-    if not hrp then return end
+local function onWeaponActivated(weaponId)
+    if weaponCooldownActive then return end
+    local wdata = WEAPON_DATA[weaponId]; if not wdata then return end
+    local char = player.Character; if not char then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
 
-    swordCooldownActive = true
-    -- swingSFX:Play()
+    weaponCooldownActive = true
 
-    showSlashVFX(hrp.CFrame)
-
-    local victim = findNearestEnemy(hrp)
-    if victim then
-        SwordHitRE:FireServer(victim)
-        floatText("⚔️", Color3.fromRGB(255,100,50))
+    -- Per-weapon VFX
+    if wdata.isProj then
+        local fwd = hrp.CFrame.LookVector
+        showProjectileVFX(hrp.Position + Vector3.new(0,1,0), fwd, wdata.col)
+    elseif wdata.isAoE then
+        showAoEVFX(hrp.Position, wdata.range, wdata.col)
+    elseif weaponId == "ShadowBlade" then
+        showShadowFlash(hrp.CFrame)
     else
-        floatText("⚔️ Miss!", Color3.fromRGB(200,200,200))
+        showSlashVFX(hrp.CFrame, wdata.col)
     end
 
-    -- Show cooldown visually: a short flash on screen handled by ClientUI via its own systems.
-    -- Reset cooldown after 1.2s
-    task.delay(1.2, function()
-        swordCooldownActive = false
-    end)
+    local victims = findEnemiesInRange(hrp, wdata.range, wdata.isAoE)
+    if #victims > 0 then
+        for _, v in ipairs(victims) do
+            WeaponHitRE:FireServer(v, weaponId)
+        end
+        floatText(#victims > 1 and ("⚔️ ×" .. #victims) or "⚔️ Hit!", wdata.col)
+    else
+        floatText("⚔️ Miss!", Color3.fromRGB(180,180,180))
+    end
 end
 
--- Listen for sword being equipped to the character
-local function attachSwordListeners(char)
+-- ── Weapon attachment ─────────────────────────────────────────
+local function attachWeaponListeners(char)
     if not char then return end
     local function tryBind(tool)
-        if tool:IsA("Tool") and tool.Name == "CoinSword" then
-            tool.Activated:Connect(onSwordActivated)
-        end
+        if not tool:IsA("Tool") then return end
+        if not WEAPON_NAMES_SET[tool.Name] then return end
+        equippedWeaponName = tool.Name
+        tool.Activated:Connect(function() onWeaponActivated(tool.Name) end)
+        tool.Unequipped:Connect(function()
+            if equippedWeaponName == tool.Name then equippedWeaponName = nil end
+            weaponCooldownActive = false
+        end)
     end
-    -- Already in character
     for _, obj in ipairs(char:GetChildren()) do tryBind(obj) end
     char.ChildAdded:Connect(tryBind)
 end
 
-if player.Character then attachSwordListeners(player.Character) end
-player.CharacterAdded:Connect(attachSwordListeners)
+if player.Character then attachWeaponListeners(player.Character) end
+player.CharacterAdded:Connect(function(char)
+    weaponCooldownActive = false
+    equippedWeaponName   = nil
+    attachWeaponListeners(char)
+end)
 
-print("[MoneyIsland] CoinSpin: ready (v2 — coin fix, magnet broadcast, sword client)")
+-- Reset cooldown when AbilityCooldown_RE fires (server confirmed action)
+AbilityCooldownRE.OnClientEvent:Connect(function(abilityName, cd)
+    if abilityName == "Weapon" then
+        task.delay(cd, function() weaponCooldownActive = false end)
+    end
+end)
+
+-- ── DASH (Q) & BLOCK (E) input ────────────────────────────────
+local dashCooldown  = false
+local blockCooldown = false
+
+local function showDashTrail(startPos, endPos)
+    local mid = (startPos + endPos) / 2
+    local len = (endPos - startPos).Magnitude
+    local trail = Instance.new("Part")
+    trail.Anchored = true; trail.CanCollide = false; trail.CastShadow = false
+    trail.Size = Vector3.new(0.8, 0.8, len); trail.Material = Enum.Material.Neon
+    trail.Color = Color3.fromRGB(80,160,255); trail.Transparency = 0.2
+    trail.CFrame = CFrame.new(mid, endPos); trail.Parent = workspace
+    TweenService:Create(trail, TweenInfo.new(0.25), {Transparency = 1}):Play()
+    Debris:AddItem(trail, 0.3)
+end
+
+UserInputService.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+
+    if input.KeyCode == Enum.KeyCode.Q and not dashCooldown then
+        local char = player.Character; if not char then return end
+        local hrp = char:FindFirstChild("HumanoidRootPart"); if not hrp then return end
+        dashCooldown = true
+        local startPos = hrp.Position
+        UseAbilityRE:FireServer("Dash")
+        -- Visual trail after a short delay (server teleports character, then we draw)
+        task.delay(0.05, function()
+            if hrp.Parent then showDashTrail(startPos, hrp.Position) end
+        end)
+        floatText("💨 Dash!", Color3.fromRGB(80,200,255))
+        task.delay(8, function() dashCooldown = false end)
+
+    elseif input.KeyCode == Enum.KeyCode.E and not blockCooldown then
+        blockCooldown = true
+        UseAbilityRE:FireServer("Block")
+        floatText("🛡️ Block!", Color3.fromRGB(255,200,80))
+        task.delay(15, function() blockCooldown = false end)
+    end
+end)
+
+print("[MoneyIsland] CoinSpin: ready (v3 — multi-weapon, dash/block, AoE/projectile VFX)")

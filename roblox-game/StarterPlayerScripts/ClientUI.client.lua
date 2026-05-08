@@ -1,5 +1,5 @@
 -- ============================================================
--- MONEY ISLAND TYCOON — ClientUI.lua  (v2 LocalScript)
+-- MONEY ISLAND TYCOON — ClientUI.lua  (v3 LocalScript)
 -- Place in: StarterPlayerScripts
 -- ============================================================
 
@@ -25,6 +25,13 @@ local RE_GeyserState  = waitRE("GeyserState")
 local RE_PlotTick     = waitRE("PlotTick_RE")
 local RE_RaidStatus   = waitRE("RaidStatus_RE")
 local RE_MachineRate  = waitRE("MachineRate_RE")
+local RE_HPUpdate     = waitRE("HPUpdate_RE")
+local RE_PlayerDied   = waitRE("PlayerDied_RE")
+local RE_RandomEvent  = waitRE("RandomEvent_RE")
+local RE_WeaponInfo   = waitRE("WeaponInfo_RE")
+local RE_AbilityCD    = waitRE("AbilityCooldown_RE")
+local RE_WeaponShop   = waitRE("WeaponShopBuy_RE")
+local RE_PlotUpgrade  = waitRE("PlotUpgradeBuy_RE")
 
 -- ── SOUND SYSTEM ─────────────────────────────────────────
 local SoundService = game:GetService("SoundService")
@@ -149,7 +156,7 @@ Instance.new("UICorner", pBarFill).CornerRadius = UDim.new(1,0)
 
 -- ── SWORD COOLDOWN INDICATOR (below HUD) ────────────────
 local swordBar = Instance.new("Frame", sg)
-swordBar.Size = UDim2.new(0, 160, 0, 20); swordBar.Position = UDim2.new(0.5, -80, 0, 72)
+swordBar.Size = UDim2.new(0, 200, 0, 22); swordBar.Position = UDim2.new(0, 10, 1, -235)
 swordBar.BackgroundColor3 = Color3.fromRGB(20, 8, 8); swordBar.BorderSizePixel = 0
 swordBar.Visible = false
 Instance.new("UICorner", swordBar).CornerRadius = UDim.new(0, 6)
@@ -183,11 +190,13 @@ local function updateSwordBar(ready)
 end
 
 -- Listen for sword equip
+local WEAPON_NAMES = {CoinBlade=true, LaserStaff=true, ThunderHammer=true, ShadowBlade=true, CoinSword=true}
 local function watchSword(char)
     if not char then return end
     local function bind(tool)
-        if tool:IsA("Tool") and tool.Name == "CoinSword" then
+        if tool:IsA("Tool") and WEAPON_NAMES[tool.Name] then
             swordBar.Visible = true
+            swordLbl.Text = "⚔️ " .. tool.Name .. " — READY"
             tool.Activated:Connect(function() updateSwordBar(false) end)
             tool.Unequipped:Connect(function() swordBar.Visible = false end)
         end
@@ -202,7 +211,7 @@ player.CharacterAdded:Connect(watchSword)
 local GEYSER_COUNT = 5
 local geyserBar = Instance.new("Frame", sg)
 geyserBar.Size            = UDim2.new(0, 252, 0, 26)
-geyserBar.Position        = UDim2.new(0.5, -126, 0, 98)
+geyserBar.Position        = UDim2.new(0, 10, 1, -200)
 geyserBar.BackgroundColor3= Color3.fromRGB(8,8,18)
 geyserBar.BorderSizePixel = 0
 Instance.new("UICorner", geyserBar).CornerRadius = UDim.new(0,8)
@@ -285,7 +294,7 @@ end)
 
 -- ── PLOT INCOME COUNTDOWN BAR ─────────────────────────────
 local plotBar = Instance.new("Frame", sg)
-plotBar.Size = UDim2.new(0, 240, 0, 22); plotBar.Position = UDim2.new(0.5, -120, 0, 130)
+plotBar.Size = UDim2.new(0, 240, 0, 22); plotBar.Position = UDim2.new(0, 10, 1, -165)
 plotBar.BackgroundColor3 = Color3.fromRGB(8,18,8); plotBar.BorderSizePixel = 0
 plotBar.Visible = false
 Instance.new("UICorner", plotBar).CornerRadius = UDim.new(0, 8)
@@ -301,7 +310,7 @@ local plotHasPlots      = false
 
 -- ── RAID BAR (BIG) ───────────────────────────────────────
 local raidBar = Instance.new("Frame", sg)
-raidBar.Size = UDim2.new(0, 340, 0, 48); raidBar.Position = UDim2.new(0.5, -170, 0, 158)
+raidBar.Size = UDim2.new(0, 300, 0, 48); raidBar.Position = UDim2.new(0, 10, 1, -105)
 raidBar.BackgroundColor3 = Color3.fromRGB(40, 5, 5); raidBar.BorderSizePixel = 0
 raidBar.Visible = false
 Instance.new("UICorner", raidBar).CornerRadius = UDim.new(0, 10)
@@ -513,27 +522,425 @@ RE_RaidStatus.OnClientEvent:Connect(function(plotId, ownerOrRaiderName, progress
     end
 end)
 
-RE_PlotTick.OnClientEvent:Connect(function(earned, cd, ticked, coinPerPlot)
-    plotTickCd        = cd
-    plotTickRemaining = cd
-    plotBar.Visible   = true
-    plotTickLbl.Text  = "📈 +" .. fmt(earned) .. " coins!"
+RE_PlotTick.OnClientEvent:Connect(function(earned, ticked)
+    plotBar.Visible  = true
+    plotTickLbl.Text = "📈 +" .. fmt(earned) .. " coins!"
+    local maxCd = plotTickCd
+    if ticked and #ticked > 0 then
+        for _, entry in ipairs(ticked) do
+            local pos = PLOT_CENTERS_CLIENT[entry.plotId]
+            if pos then showMachineIncome(pos, entry.coins) end
+            if entry.cd and entry.cd > maxCd then maxCd = entry.cd end
+        end
+    end
+    plotTickCd        = maxCd
+    plotTickRemaining = maxCd
     task.delay(1.2, function()
         if plotTickRemaining > 0 then
             plotTickLbl.Text = "📈 income in " .. math.ceil(plotTickRemaining) .. "s"
         end
     end)
+end)
 
-    -- 3D income animations above each ticked machine
-    if ticked then
-        for _, plotId in ipairs(ticked) do
-            local pos = PLOT_CENTERS_CLIENT[plotId]
-            if pos then
-                showMachineIncome(pos, coinPerPlot or (earned / math.max(1,#ticked)))
-            end
+-- ── HP BAR ───────────────────────────────────────────────
+local hpBarFrame = Instance.new("Frame", sg)
+hpBarFrame.Size = UDim2.new(0, 200, 0, 14); hpBarFrame.Position = UDim2.new(0.5, -100, 0, 68)
+hpBarFrame.BackgroundColor3 = Color3.fromRGB(20,8,8); hpBarFrame.BorderSizePixel = 0
+Instance.new("UICorner", hpBarFrame).CornerRadius = UDim.new(0, 5)
+local hpStroke = Instance.new("UIStroke", hpBarFrame)
+hpStroke.Color = Color3.fromRGB(180, 40, 40); hpStroke.Thickness = 1.2
+local hpFill = Instance.new("Frame", hpBarFrame)
+hpFill.Size = UDim2.new(1,0,1,0); hpFill.BackgroundColor3 = Color3.fromRGB(220,40,40)
+hpFill.BorderSizePixel = 0
+Instance.new("UICorner", hpFill).CornerRadius = UDim.new(0, 5)
+local hpLbl = Instance.new("TextLabel", hpBarFrame)
+hpLbl.Size = UDim2.new(1,0,1,0); hpLbl.BackgroundTransparency = 1
+hpLbl.Text = "❤️ 100 / 100"; hpLbl.Font = Enum.Font.GothamBold; hpLbl.TextSize = 10
+hpLbl.TextColor3 = Color3.fromRGB(255,220,220)
+
+RE_HPUpdate.OnClientEvent:Connect(function(hp, maxHp)
+    local pct = math.clamp(hp / math.max(1, maxHp), 0, 1)
+    TweenService:Create(hpFill, TweenInfo.new(0.3), {Size = UDim2.new(pct, 0, 1, 0)}):Play()
+    hpFill.BackgroundColor3 = pct > 0.5 and Color3.fromRGB(60,200,60)
+        or pct > 0.25 and Color3.fromRGB(220,160,0)
+        or Color3.fromRGB(220,40,40)
+    hpLbl.Text = "❤️ " .. math.ceil(hp) .. " / " .. maxHp
+end)
+
+-- ── DEATH / RESPAWN SCREEN ────────────────────────────────
+local deathScreen = Instance.new("Frame", sg)
+deathScreen.Name = "DeathScreen"; deathScreen.Size = UDim2.new(1,0,1,0)
+deathScreen.BackgroundColor3 = Color3.fromRGB(0,0,0); deathScreen.BackgroundTransparency = 0.3
+deathScreen.BorderSizePixel = 0; deathScreen.Visible = false; deathScreen.ZIndex = 100
+
+local deathLbl = Instance.new("TextLabel", deathScreen)
+deathLbl.Size = UDim2.new(1,0,0,80); deathLbl.Position = UDim2.new(0,0,0.4,0)
+deathLbl.BackgroundTransparency = 1; deathLbl.Text = "💀 YOU DIED"
+deathLbl.TextColor3 = Color3.fromRGB(255,60,60); deathLbl.Font = Enum.Font.GothamBold
+deathLbl.TextSize = 48; deathLbl.TextXAlignment = Enum.TextXAlignment.Center; deathLbl.ZIndex = 101
+
+local respawnLbl = Instance.new("TextLabel", deathScreen)
+respawnLbl.Size = UDim2.new(1,0,0,36); respawnLbl.Position = UDim2.new(0,0,0.4,88)
+respawnLbl.BackgroundTransparency = 1; respawnLbl.Text = "Respawning in 5..."
+respawnLbl.TextColor3 = Color3.fromRGB(255,200,200); respawnLbl.Font = Enum.Font.GothamBold
+respawnLbl.TextSize = 22; respawnLbl.TextXAlignment = Enum.TextXAlignment.Center; respawnLbl.ZIndex = 101
+
+local coinsLostLbl = Instance.new("TextLabel", deathScreen)
+coinsLostLbl.Size = UDim2.new(1,0,0,28); coinsLostLbl.Position = UDim2.new(0,0,0.4,130)
+coinsLostLbl.BackgroundTransparency = 1; coinsLostLbl.Text = ""
+coinsLostLbl.TextColor3 = Color3.fromRGB(255,180,50); coinsLostLbl.Font = Enum.Font.GothamBold
+coinsLostLbl.TextSize = 17; coinsLostLbl.TextXAlignment = Enum.TextXAlignment.Center; coinsLostLbl.ZIndex = 101
+
+RE_PlayerDied.OnClientEvent:Connect(function(isMe, killerName, coinsLost)
+    if not isMe then return end
+    coinsLostLbl.Text = killerName
+        and ("💸 " .. killerName .. " took " .. fmt(coinsLost) .. " coins from you!")
+        or  ("💸 You dropped " .. fmt(coinsLost) .. " coins!")
+    deathScreen.Visible = true
+    TweenService:Create(hpFill, TweenInfo.new(0.2), {Size = UDim2.new(0,0,1,0)}):Play()
+    hpLbl.Text = "❤️ 0 / 100"
+    for t = 5, 1, -1 do
+        respawnLbl.Text = "Respawning in " .. t .. "..."
+        task.wait(1)
+    end
+    deathScreen.Visible = false
+end)
+
+-- ── RANDOM EVENT BANNER ───────────────────────────────────
+local eventBanner = Instance.new("Frame", sg)
+eventBanner.Name = "EventBanner"; eventBanner.Size = UDim2.new(0, 380, 0, 56)
+eventBanner.Position = UDim2.new(0.5, -190, 0, -70)
+eventBanner.BackgroundColor3 = Color3.fromRGB(8,8,22); eventBanner.BorderSizePixel = 0
+Instance.new("UICorner", eventBanner).CornerRadius = UDim.new(0, 14)
+local evStroke = Instance.new("UIStroke", eventBanner)
+evStroke.Color = Color3.fromRGB(255,200,0); evStroke.Thickness = 2.5
+
+local evTitle = Instance.new("TextLabel", eventBanner)
+evTitle.Size = UDim2.new(1,-12,0,28); evTitle.Position = UDim2.new(0,6,0,4)
+evTitle.BackgroundTransparency = 1; evTitle.Text = "🌟 EVENT"
+evTitle.TextColor3 = Color3.fromRGB(255,215,0); evTitle.Font = Enum.Font.GothamBold
+evTitle.TextSize = 18; evTitle.TextXAlignment = Enum.TextXAlignment.Center
+
+local evDesc = Instance.new("TextLabel", eventBanner)
+evDesc.Size = UDim2.new(1,-12,0,20); evDesc.Position = UDim2.new(0,6,0,32)
+evDesc.BackgroundTransparency = 1; evDesc.Text = ""
+evDesc.TextColor3 = Color3.fromRGB(200,200,230); evDesc.Font = Enum.Font.Gotham
+evDesc.TextSize = 12; evDesc.TextXAlignment = Enum.TextXAlignment.Center
+
+RE_RandomEvent.OnClientEvent:Connect(function(evId, evName, evDesc_txt, evCol, evDur)
+    evStroke.Color = Color3.fromRGB(255,200,0)
+    evTitle.Text = "🌟 " .. evName
+    evDesc.Text  = evDesc_txt
+    TweenService:Create(eventBanner, TweenInfo.new(0.4, Enum.EasingStyle.Back, Enum.EasingDirection.Out),
+        {Position = UDim2.new(0.5,-190,0,10)}):Play()
+    task.delay(evDur or 8, function()
+        TweenService:Create(eventBanner, TweenInfo.new(0.3),
+            {Position = UDim2.new(0.5,-190,0,-70)}):Play()
+    end)
+end)
+
+-- ── ABILITY COOLDOWN DISPLAY ──────────────────────────────
+local abilityBar = Instance.new("Frame", sg)
+abilityBar.Size = UDim2.new(0, 200, 0, 22); abilityBar.Position = UDim2.new(0, 10, 1, -265)
+abilityBar.BackgroundColor3 = Color3.fromRGB(10,8,22); abilityBar.BorderSizePixel = 0
+abilityBar.Visible = false
+Instance.new("UICorner", abilityBar).CornerRadius = UDim.new(0, 6)
+local abStroke = Instance.new("UIStroke", abilityBar)
+abStroke.Color = Color3.fromRGB(80,120,255); abStroke.Thickness = 1.2
+
+local dashLbl = Instance.new("TextLabel", abilityBar)
+dashLbl.Size = UDim2.new(0.5,0,1,0); dashLbl.BackgroundTransparency = 1
+dashLbl.Text = "Q Dash ✓"; dashLbl.Font = Enum.Font.GothamBold; dashLbl.TextSize = 10
+dashLbl.TextColor3 = Color3.fromRGB(100,200,255)
+
+local blockLbl = Instance.new("TextLabel", abilityBar)
+blockLbl.Size = UDim2.new(0.5,0,1,0); blockLbl.Position = UDim2.new(0.5,0,0,0)
+blockLbl.BackgroundTransparency = 1
+blockLbl.Text = "E Block ✓"; blockLbl.Font = Enum.Font.GothamBold; blockLbl.TextSize = 10
+blockLbl.TextColor3 = Color3.fromRGB(255,200,80)
+
+RE_AbilityCD.OnClientEvent:Connect(function(abilityName, cooldown)
+    abilityBar.Visible = true
+    if abilityName == "Dash" then
+        if cooldown > 0 then
+            dashLbl.Text = "Q " .. math.ceil(cooldown) .. "s"
+            dashLbl.TextColor3 = Color3.fromRGB(100,100,140)
+            task.delay(cooldown, function()
+                dashLbl.Text = "Q Dash ✓"
+                dashLbl.TextColor3 = Color3.fromRGB(100,200,255)
+            end)
+        else
+            dashLbl.Text = "Q Dash ✓"; dashLbl.TextColor3 = Color3.fromRGB(100,200,255)
+        end
+    elseif abilityName == "Block" then
+        if cooldown > 0 then
+            blockLbl.Text = "E " .. math.ceil(cooldown) .. "s"
+            blockLbl.TextColor3 = Color3.fromRGB(140,120,60)
+            task.delay(cooldown, function()
+                blockLbl.Text = "E Block ✓"
+                blockLbl.TextColor3 = Color3.fromRGB(255,200,80)
+            end)
+        else
+            blockLbl.Text = "E Block ✓"; blockLbl.TextColor3 = Color3.fromRGB(255,200,80)
         end
     end
 end)
+
+-- ── WEAPON SHOP PANEL ─────────────────────────────────────
+local WEAPONS_CLIENT = {
+    {id="CoinBlade",     name="⚔️ Coin Blade",     desc="Classic melee sword.", cost=0,     col=Color3.fromRGB(255,215,0)},
+    {id="LaserStaff",    name="🔮 Laser Staff",    desc="Long-range projectile bolt.", cost=2000,  col=Color3.fromRGB(80,160,255)},
+    {id="ThunderHammer", name="🔨 Thunder Hammer", desc="AoE shockwave hits all nearby.", cost=5000,  col=Color3.fromRGB(255,255,60)},
+    {id="ShadowBlade",   name="🌑 Shadow Blade",   desc="Fast dark blade, high damage.", cost=12000, col=Color3.fromRGB(160,40,255)},
+}
+local WEAPON_UPGRADE_COSTS_CLIENT = {500,1500,4000,10000}
+
+local weaponPanel = Instance.new("Frame", sg)
+weaponPanel.Name = "WeaponPanel"; weaponPanel.Visible = false
+weaponPanel.Size = UDim2.new(0, 400, 0, 490)
+weaponPanel.Position = UDim2.new(0.5, -200, 0.5, -245)
+weaponPanel.BackgroundColor3 = Color3.fromRGB(8,8,22); weaponPanel.BorderSizePixel = 0
+Instance.new("UICorner", weaponPanel).CornerRadius = UDim.new(0,14)
+local wpStroke = Instance.new("UIStroke", weaponPanel)
+wpStroke.Color = Color3.fromRGB(200,80,255); wpStroke.Thickness = 2
+
+local wpTitle = Instance.new("TextLabel", weaponPanel)
+wpTitle.Size = UDim2.new(1,-50,0,44); wpTitle.Position = UDim2.new(0,12,0,6)
+wpTitle.BackgroundTransparency = 1; wpTitle.Text = "🗡️ WEAPON SHOP"
+wpTitle.TextColor3 = Color3.fromRGB(200,80,255); wpTitle.Font = Enum.Font.GothamBold
+wpTitle.TextSize = 22; wpTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local wpClose = Instance.new("TextButton", weaponPanel)
+wpClose.Size = UDim2.new(0,34,0,34); wpClose.Position = UDim2.new(1,-42,0,8)
+wpClose.BackgroundColor3 = Color3.fromRGB(180,25,25); wpClose.Text = "✕"
+wpClose.TextColor3 = Color3.new(1,1,1); wpClose.Font = Enum.Font.GothamBold; wpClose.TextSize = 16
+Instance.new("UICorner", wpClose).CornerRadius = UDim.new(0,8)
+wpClose.MouseButton1Click:Connect(function() weaponPanel.Visible = false end)
+
+local wpScroll = Instance.new("ScrollingFrame", weaponPanel)
+wpScroll.Size = UDim2.new(1,-16,1,-56); wpScroll.Position = UDim2.new(0,8,0,52)
+wpScroll.BackgroundTransparency = 1; wpScroll.ScrollBarThickness = 4
+wpScroll.ScrollBarImageColor3 = Color3.fromRGB(200,80,255); wpScroll.CanvasSize = UDim2.new(0,0,0,0)
+wpScroll.BorderSizePixel = 0
+Instance.new("UIListLayout", wpScroll).Padding = UDim.new(0,8)
+
+local function buildWeaponShop(ownedWeapons, weaponLevels, equippedWeapon, coins)
+    for _, c in ipairs(wpScroll:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
+    end
+    local total = 0
+    for _, w in ipairs(WEAPONS_CLIENT) do
+        local owned   = ownedWeapons and ownedWeapons[w.id]
+        local level   = (weaponLevels and weaponLevels[w.id]) or 1
+        local equipped= equippedWeapon == w.id
+        local upgIdx  = math.min(level, #WEAPON_UPGRADE_COSTS_CLIENT)
+        local upgCost = WEAPON_UPGRADE_COSTS_CLIENT[upgIdx]
+        local maxed   = level >= 5
+
+        local card = Instance.new("Frame", wpScroll)
+        card.Size = UDim2.new(1,0,0,96); card.BackgroundColor3 = Color3.fromRGB(16,16,32)
+        card.BorderSizePixel = 0
+        Instance.new("UICorner", card).CornerRadius = UDim.new(0,10)
+        local cs = Instance.new("UIStroke", card)
+        cs.Color = equipped and w.col or (owned and Color3.fromRGB(60,60,90) or Color3.fromRGB(35,35,55))
+        cs.Thickness = equipped and 2.5 or 1.2
+
+        local nm = Instance.new("TextLabel", card); nm.Size = UDim2.new(0.6,0,0,26)
+        nm.Position = UDim2.new(0,10,0,6); nm.BackgroundTransparency = 1
+        nm.Text = w.name; nm.TextColor3 = w.col; nm.Font = Enum.Font.GothamBold; nm.TextSize = 15
+        nm.TextXAlignment = Enum.TextXAlignment.Left
+
+        local dsc = Instance.new("TextLabel", card); dsc.Size = UDim2.new(0.6,0,0,18)
+        dsc.Position = UDim2.new(0,10,0,30); dsc.BackgroundTransparency = 1
+        dsc.Text = w.desc; dsc.TextColor3 = Color3.fromRGB(140,140,170); dsc.Font = Enum.Font.Gotham; dsc.TextSize = 11
+        dsc.TextXAlignment = Enum.TextXAlignment.Left
+
+        local lvl = Instance.new("TextLabel", card); lvl.Size = UDim2.new(0.6,0,0,18)
+        lvl.Position = UDim2.new(0,10,0,50); lvl.BackgroundTransparency = 1
+        lvl.Text = owned and ("Lv " .. level .. " / 5" .. (maxed and " MAX" or "")) or "🔒 Not owned"
+        lvl.TextColor3 = owned and Color3.fromRGB(255,200,0) or Color3.fromRGB(100,100,120)
+        lvl.Font = Enum.Font.GothamBold; lvl.TextSize = 12; lvl.TextXAlignment = Enum.TextXAlignment.Left
+
+        local equippedTag = Instance.new("TextLabel", card); equippedTag.Size = UDim2.new(0.6,0,0,16)
+        equippedTag.Position = UDim2.new(0,10,0,70); equippedTag.BackgroundTransparency = 1
+        equippedTag.Text = equipped and "✓ EQUIPPED" or ""
+        equippedTag.TextColor3 = w.col; equippedTag.Font = Enum.Font.GothamBold; equippedTag.TextSize = 11
+        equippedTag.TextXAlignment = Enum.TextXAlignment.Left
+
+        local btn = Instance.new("TextButton", card); btn.Size = UDim2.new(0,100,0,38)
+        btn.Position = UDim2.new(1,-112,0.5,-19)
+        if not owned then
+            btn.BackgroundColor3 = coins >= w.cost and Color3.fromRGB(80,20,120) or Color3.fromRGB(40,30,50)
+            btn.Text = w.cost == 0 and "FREE" or ("💰 " .. fmt(w.cost))
+            btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+            btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer("buy", w.id) end)
+        elseif equipped then
+            if not maxed then
+                btn.BackgroundColor3 = coins >= upgCost and Color3.fromRGB(20,80,20) or Color3.fromRGB(25,40,25)
+                btn.Text = "⬆️ " .. fmt(upgCost)
+                btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+                btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer("upgrade", w.id) end)
+            else
+                btn.BackgroundColor3 = Color3.fromRGB(20,50,20)
+                btn.Text = "MAX ✓"; btn.TextColor3 = Color3.fromRGB(0,210,80)
+                btn.Font = Enum.Font.GothamBold; btn.TextSize = 13
+                Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+            end
+        else
+            btn.BackgroundColor3 = Color3.fromRGB(20,60,70)
+            btn.Text = "Equip"; btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 13
+            Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
+            btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer("equip", w.id) end)
+        end
+        total = total + 104
+    end
+    wpScroll.CanvasSize = UDim2.new(0,0,0,total)
+end
+
+RE_WeaponInfo.OnClientEvent:Connect(function(ownedWeapons, weaponLevels, equippedWeapon)
+    if weaponPanel.Visible and currentData then
+        buildWeaponShop(ownedWeapons, weaponLevels, equippedWeapon, currentData.coins or 0)
+    end
+end)
+
+local weaponPanelOpen = false
+local function openWeaponShop()
+    weaponPanelOpen = not weaponPanelOpen
+    weaponPanel.Visible = weaponPanelOpen
+    if weaponPanelOpen and currentData then
+        buildWeaponShop(currentData.ownedWeapons, currentData.weaponLevels,
+            currentData.equippedWeapon, currentData.coins or 0)
+    end
+end
+
+-- ── BUILDING UPGRADE PANEL ────────────────────────────────
+local PATHS = {
+    A={name="⚡ Production", desc="More coins per tick",  col=Color3.fromRGB(255,200,0),  costs={500,2500,10000,30000}, labels={"1.5×","2.0×","3.0×","5.0×"}},
+    B={name="⏱️ Efficiency",  desc="Faster tick interval", col=Color3.fromRGB(80,220,255),  costs={750,3500,12000,35000}, labels={"-1s","-2s","-3s","-5s"}},
+    C={name="🛡️ Defense",     desc="Raid protection",      col=Color3.fromRGB(255,80,200),  costs={1000,6000,20000,50000},labels={"8s harder","8min shield","Earn while defending","Golden: 3×"}},
+}
+
+local buildPanel = Instance.new("Frame", sg)
+buildPanel.Name = "BuildPanel"; buildPanel.Visible = false
+buildPanel.Size = UDim2.new(0, 420, 0, 520)
+buildPanel.Position = UDim2.new(0.5, -210, 0.5, -260)
+buildPanel.BackgroundColor3 = Color3.fromRGB(8,8,22); buildPanel.BorderSizePixel = 0
+Instance.new("UICorner", buildPanel).CornerRadius = UDim.new(0,14)
+local bpStroke = Instance.new("UIStroke", buildPanel)
+bpStroke.Color = Color3.fromRGB(255,160,40); bpStroke.Thickness = 2
+
+local bpTitle = Instance.new("TextLabel", buildPanel)
+bpTitle.Size = UDim2.new(1,-50,0,44); bpTitle.Position = UDim2.new(0,12,0,6)
+bpTitle.BackgroundTransparency = 1; bpTitle.Text = "🔧 MACHINE UPGRADES"
+bpTitle.TextColor3 = Color3.fromRGB(255,160,40); bpTitle.Font = Enum.Font.GothamBold
+bpTitle.TextSize = 20; bpTitle.TextXAlignment = Enum.TextXAlignment.Left
+
+local bpClose = Instance.new("TextButton", buildPanel)
+bpClose.Size = UDim2.new(0,34,0,34); bpClose.Position = UDim2.new(1,-42,0,8)
+bpClose.BackgroundColor3 = Color3.fromRGB(180,25,25); bpClose.Text = "✕"
+bpClose.TextColor3 = Color3.new(1,1,1); bpClose.Font = Enum.Font.GothamBold; bpClose.TextSize = 16
+Instance.new("UICorner", bpClose).CornerRadius = UDim.new(0,8)
+bpClose.MouseButton1Click:Connect(function() buildPanel.Visible = false end)
+
+local bpScroll = Instance.new("ScrollingFrame", buildPanel)
+bpScroll.Size = UDim2.new(1,-16,1,-56); bpScroll.Position = UDim2.new(0,8,0,52)
+bpScroll.BackgroundTransparency = 1; bpScroll.ScrollBarThickness = 4
+bpScroll.ScrollBarImageColor3 = Color3.fromRGB(255,160,40); bpScroll.CanvasSize = UDim2.new(0,0,0,0)
+bpScroll.BorderSizePixel = 0
+Instance.new("UIListLayout", bpScroll).Padding = UDim.new(0,6)
+
+local function buildUpgradePanel(data)
+    for _, c in ipairs(bpScroll:GetChildren()) do
+        if c:IsA("Frame") then c:Destroy() end
+    end
+    local ownedPlots = data.ownedPlots or {}
+    local plotUpgrades = data.plotUpgrades or {}
+    local coins = data.coins or 0
+    local total = 0
+
+    local hasPlots = false
+    for plotId, owned in pairs(ownedPlots) do
+        if not owned then continue end
+        hasPlots = true
+
+        -- Plot header
+        local header = Instance.new("Frame", bpScroll)
+        header.Size = UDim2.new(1,0,0,26); header.BackgroundColor3 = Color3.fromRGB(20,16,30)
+        header.BorderSizePixel = 0
+        Instance.new("UICorner", header).CornerRadius = UDim.new(0,6)
+        local hl = Instance.new("TextLabel", header); hl.Size = UDim2.new(1,-10,1,0)
+        hl.Position = UDim2.new(0,8,0,0); hl.BackgroundTransparency = 1
+        hl.Text = "🏗️ " .. plotId; hl.TextColor3 = Color3.fromRGB(255,200,100)
+        hl.Font = Enum.Font.GothamBold; hl.TextSize = 13; hl.TextXAlignment = Enum.TextXAlignment.Left
+        total = total + 32
+
+        -- Three path buttons per plot
+        local plotUpg = plotUpgrades[plotId] or {}
+        for _, pathKey in ipairs({"A","B","C"}) do
+            local path = PATHS[pathKey]
+            local level = plotUpg[pathKey] or 0
+            local maxed = level >= 4
+            local cost  = not maxed and path.costs[level + 1] or 0
+            local canBuy= not maxed and coins >= cost
+            local nextLabel = not maxed and path.labels[level + 1] or "MAX"
+
+            local card = Instance.new("Frame", bpScroll)
+            card.Size = UDim2.new(1,0,0,56); card.BackgroundColor3 = Color3.fromRGB(14,14,28)
+            card.BorderSizePixel = 0
+            Instance.new("UICorner", card).CornerRadius = UDim.new(0,8)
+            local cs2 = Instance.new("UIStroke", card)
+            cs2.Color = canBuy and path.col or Color3.fromRGB(45,45,65); cs2.Thickness = 1.2
+
+            local pnm = Instance.new("TextLabel", card); pnm.Size = UDim2.new(0.55,0,0,22)
+            pnm.Position = UDim2.new(0,8,0,4); pnm.BackgroundTransparency = 1
+            pnm.Text = path.name; pnm.TextColor3 = path.col; pnm.Font = Enum.Font.GothamBold; pnm.TextSize = 13
+            pnm.TextXAlignment = Enum.TextXAlignment.Left
+
+            local pst = Instance.new("TextLabel", card); pst.Size = UDim2.new(0.55,0,0,18)
+            pst.Position = UDim2.new(0,8,0,28); pst.BackgroundTransparency = 1
+            pst.Text = "Lv " .. level .. "/4  Next: " .. nextLabel
+            pst.TextColor3 = Color3.fromRGB(160,160,190); pst.Font = Enum.Font.Gotham; pst.TextSize = 11
+            pst.TextXAlignment = Enum.TextXAlignment.Left
+
+            local pbtn = Instance.new("TextButton", card); pbtn.Size = UDim2.new(0,96,0,36)
+            pbtn.Position = UDim2.new(1,-104,0.5,-18)
+            pbtn.BackgroundColor3 = maxed and Color3.fromRGB(20,50,20)
+                or canBuy and Color3.fromRGB(30,55,20) or Color3.fromRGB(30,25,40)
+            pbtn.Text = maxed and "MAX ✓" or ("💰 " .. fmt(cost))
+            pbtn.TextColor3 = maxed and Color3.fromRGB(0,210,80) or Color3.new(1,1,1)
+            pbtn.Font = Enum.Font.GothamBold; pbtn.TextSize = 12
+            Instance.new("UICorner", pbtn).CornerRadius = UDim.new(0,8)
+            if not maxed then
+                local pid, pk = plotId, pathKey
+                pbtn.MouseButton1Click:Connect(function()
+                    RE_PlotUpgrade:FireServer(pid, pk)
+                end)
+            end
+            total = total + 62
+        end
+    end
+
+    if not hasPlots then
+        local noPlots = Instance.new("TextLabel", bpScroll)
+        noPlots.Size = UDim2.new(1,0,0,60); noPlots.BackgroundTransparency = 1
+        noPlots.Text = "Buy machines to unlock upgrade paths!"
+        noPlots.TextColor3 = Color3.fromRGB(120,120,150); noPlots.Font = Enum.Font.GothamBold
+        noPlots.TextSize = 14; noPlots.TextXAlignment = Enum.TextXAlignment.Center
+        total = 60
+    end
+    bpScroll.CanvasSize = UDim2.new(0,0,0,total + 10)
+end
+
+local buildPanelOpen = false
+local function openBuildPanel()
+    buildPanelOpen = not buildPanelOpen
+    buildPanel.Visible = buildPanelOpen
+    if buildPanelOpen and currentData then
+        buildUpgradePanel(currentData)
+    end
+end
 
 -- ── SIDE BUTTONS ─────────────────────────────────────────
 local btnFrame = Instance.new("Frame",sg)
@@ -594,7 +1001,7 @@ scrollLayout.FillDirection=Enum.FillDirection.Vertical; scrollLayout.Padding=UDi
 -- ── TOAST ────────────────────────────────────────────────
 local toast=Instance.new("Frame",sg)
 toast.Name="Toast"; toast.Size=UDim2.new(0,320,0,64)
-toast.Position=UDim2.new(0.5,-160,1,20)
+toast.Position=UDim2.new(0,10,1,20)
 toast.BackgroundColor3=Color3.fromRGB(12,12,28); toast.BorderSizePixel=0
 Instance.new("UICorner",toast).CornerRadius=UDim.new(0,12)
 local toastStroke=Instance.new("UIStroke",toast)
@@ -635,10 +1042,10 @@ local function showToast(title,body,colorKey)
         toastStroke.Color=colorMap[item.col] or colorMap.green
         toastTitle.Text=item.title; toastBody.Text=item.body
         TweenService:Create(toast,TweenInfo.new(0.35,Enum.EasingStyle.Back,Enum.EasingDirection.Out),
-            {Position=UDim2.new(0.5,-160,1,-80)}):Play()
+            {Position=UDim2.new(0,10,1,-80)}):Play()
         task.delay(2.6,function()
             TweenService:Create(toast,TweenInfo.new(0.25),
-                {Position=UDim2.new(0.5,-160,1,20)}):Play()
+                {Position=UDim2.new(0,10,1,20)}):Play()
             task.delay(0.3,pop)
         end)
     end
@@ -1163,6 +1570,8 @@ local function openStats()
 end
 
 -- ── WIRE BUTTONS ─────────────────────────────────────────
+makeBtn("🗡️", Color3.fromRGB(100,20,130), openWeaponShop)
+makeBtn("🔧", Color3.fromRGB(130,70,10),  openBuildPanel)
 makeBtn("🛒", Color3.fromRGB(25,110,50),  openShop)
 makeBtn("🎁", Color3.fromRGB(120,40,140), openDaily)
 makeBtn("🔥", Color3.fromRGB(160,55,0),   openPrestige)
@@ -1186,6 +1595,9 @@ RE_UpdateStats.OnClientEvent:Connect(function(data, upgrades)
     upgradesDef = upgrades
     updateHUD(data)
     if shopOpen then buildShop(data, upgrades) end
+    if weaponPanelOpen then buildWeaponShop(data.ownedWeapons, data.weaponLevels, data.equippedWeapon, data.coins or 0) end
+    if buildPanelOpen  then buildUpgradePanel(data) end
+    abilityBar.Visible = true
     local plotCount = 0
     if data.ownedPlots then
         for _, v in pairs(data.ownedPlots) do if v then plotCount += 1 end end
@@ -1249,17 +1661,20 @@ end)
 task.delay(2, function()
     showToast("Welcome to Money Island!", "Buy machines to earn coins automatically!", "gold")
     task.delay(3.5, function()
-        showToast("⚔️ You have a sword!", "Equip it and click to steal coins from others!", "red")
+        showToast("⚔️ Weapons & Abilities!", "Equip a weapon. Press Q to Dash, E to Block!", "red")
     end)
     task.delay(7, function()
-        showToast("🚨 Raid system!", "Stand on enemy machines to steal them. Defend yours by STANDING on your own machine!", "red")
+        showToast("🗡️ Weapon Shop!", "Tap 🗡️ to buy and upgrade 4 different weapons!", "blue")
     end)
-    task.delay(11, function()
-        showToast("📈 Machine income!", "Golden floating text shows each machine earning. See rates in stats 📊", "green")
+    task.delay(10, function()
+        showToast("🔧 Machine Upgrades!", "Tap 🔧 to upgrade your machines: Production, Efficiency, or Defense path!", "gold")
     end)
-    task.delay(15, function()
+    task.delay(14, function()
+        showToast("🌟 Random Events!", "Server-wide events trigger every few minutes — look out for the banner!", "green")
+    end)
+    task.delay(18, function()
         showToast("🎁 Daily Reward!", "Tap 🎁 on the right to claim it!", "blue")
     end)
 end)
 
-print("[MoneyIsland] ✅ ClientUI v2 loaded!")
+print("[MoneyIsland] ✅ ClientUI v3 loaded!")

@@ -1,12 +1,14 @@
--- MapBuilder.server.lua (v25 - Free plot access + machine raiding + PVP hot zone)
+-- MapBuilder.server.lua (v26 - 20 unique machines + night skybox + CoinRain/GeyserSurge events)
 
 local Workspace         = game:GetService("Workspace")
 local Players           = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting          = game:GetService("Lighting")
 
--- MainGameServer creates CoinCollected_BE first
-local coinBE = ReplicatedStorage:WaitForChild("CoinCollected_BE", 15)
+-- MainGameServer creates these first; we wait for them
+local coinBE       = ReplicatedStorage:WaitForChild("CoinCollected_BE", 15)
+local CoinRainBE   = ReplicatedStorage:WaitForChild("CoinRain_BE",      30)
+local GeyserSurgeBE= ReplicatedStorage:WaitForChild("GeyserSurge_BE",   30)
 
 -- We create these; MainGameServer waits for them
 local CoinDestroyBE    = Instance.new("BindableEvent", ReplicatedStorage); CoinDestroyBE.Name    = "CoinDestroy_BE"
@@ -1029,6 +1031,10 @@ local function spawnGeyserBurst(cx, cz, geyserIdx, isMega)
 			if not coin.Parent then return end
 			local char = hit.Parent
 			local player = Players:GetPlayerFromCharacter(char)
+			if not player then
+				char = hit.Parent.Parent
+				player = Players:GetPlayerFromCharacter(char)
+			end
 			if not player then return end
 			local uid = player.UserId
 			if debounce[uid] then return end
@@ -1122,6 +1128,47 @@ CoinDestroyBE.Event:Connect(function(coinRef)
 	if coinRef and coinRef.Parent then coinRef:Destroy() end
 end)
 
+-- ── COIN RAIN EVENT ───────────────────────────────────────────
+-- Fires during CoinRain random event: dump a burst at every geyser simultaneously
+CoinRainBE.Event:Connect(function()
+	for _, cd in ipairs(contestedList) do
+		spawnGeyserBurst(cd.cx, cd.cz, cd.idx, false)
+		cd.ring.Color        = Color3.fromRGB(255,215,0)
+		cd.ring.Transparency = 0.05
+		cd.light.Brightness  = 8
+		cd.light.Color       = Color3.fromRGB(255,215,0)
+		GeyserStateRE:FireAllClients(cd.idx, true)
+		task.delay(GEYSER_ACTIVE, function()
+			cd.ring.Color        = Color3.fromRGB(50,50,50)
+			cd.ring.Transparency = 0.65
+			cd.light.Brightness  = 0.8
+			cd.light.Color       = Color3.fromRGB(100,80,0)
+			GeyserStateRE:FireAllClients(cd.idx, false)
+		end)
+	end
+end)
+
+-- ── GEYSER SURGE EVENT ────────────────────────────────────────
+-- Fires during GeyserSurge random event: all geysers mega-burst together
+GeyserSurgeBE.Event:Connect(function()
+	for _, cd in ipairs(contestedList) do
+		cd.ring.Color        = Color3.fromRGB(255,80,0)
+		cd.ring.Transparency = 0.02
+		cd.light.Brightness  = 10
+		cd.light.Color       = Color3.fromRGB(255,120,0)
+		GeyserActivateBE:Fire(cd.idx)
+		GeyserStateRE:FireAllClients(cd.idx, true, true)
+		spawnGeyserBurst(cd.cx, cd.cz, cd.idx, true)
+		task.delay(GEYSER_ACTIVE + 2, function()
+			cd.ring.Color        = Color3.fromRGB(50,50,50)
+			cd.ring.Transparency = 0.65
+			cd.light.Brightness  = 0.8
+			cd.light.Color       = Color3.fromRGB(100,80,0)
+			GeyserStateRE:FireAllClients(cd.idx, false)
+		end)
+	end
+end)
+
 -- ── PLOT EVENT HANDLERS ───────────────────────────────────────
 -- plotUnlockedBE: MainGameServer fires when plot is successfully purchased
 plotUnlockedBE.Event:Connect(function(id, player)
@@ -1213,21 +1260,38 @@ PlotRaidAlertBE.Event:Connect(function(plotId, isActive)
 	end
 end)
 
--- ── LIGHTING & ATMOSPHERE ─────────────────────────────────────
-Lighting.Brightness     = 2.2
-Lighting.ClockTime      = 14
-Lighting.Ambient        = Color3.fromRGB(85,82,70)
-Lighting.OutdoorAmbient = Color3.fromRGB(128,120,102)
+-- ── NIGHT SKYBOX + LIGHTING ──────────────────────────────────
+Lighting.ClockTime      = 0       -- midnight
+Lighting.Brightness     = 0.4
+Lighting.Ambient        = Color3.fromRGB(15, 18, 35)
+Lighting.OutdoorAmbient = Color3.fromRGB(22, 26, 55)
 Lighting.GlobalShadows  = true
-Lighting.ShadowSoftness = 0.2
+Lighting.ShadowSoftness = 0.5
+Lighting.FogEnd         = 2000
+Lighting.FogColor       = Color3.fromRGB(8, 10, 22)
 
+-- Star-filled night sky
+local sky = Instance.new("Sky", Lighting)
+sky.StarCount      = 6000
+sky.MoonAngularSize = 11
+sky.SunAngularSize  = 0   -- hide sun at night
+
+-- Bloom makes neon machines glow beautifully against the dark sky
+local bloom = Instance.new("BloomEffect", Lighting)
+bloom.Intensity  = 0.7
+bloom.Size       = 24
+bloom.Threshold  = 0.9
+
+-- Subtle color grade: cooler blue-tinted night
 local cc = Instance.new("ColorCorrectionEffect", Lighting)
-cc.Saturation = 0.12; cc.Brightness = 0.02; cc.Contrast = 0.04
+cc.Saturation = 0.18; cc.Brightness = -0.05; cc.Contrast = 0.08
+cc.TintColor  = Color3.fromRGB(200, 210, 255)
 
+-- Thin atmosphere: minimal haze so distant neon pops
 local atmo = Instance.new("Atmosphere", Lighting)
-atmo.Density = 0.32; atmo.Offset = 0.08
-atmo.Color   = Color3.fromRGB(199,199,199)
-atmo.Decay   = Color3.fromRGB(106,127,153)
-atmo.Glare   = 0.08; atmo.Haze = 1.2
+atmo.Density = 0.12; atmo.Offset = 0.04
+atmo.Color   = Color3.fromRGB(90, 100, 160)
+atmo.Decay   = Color3.fromRGB(40, 50, 90)
+atmo.Glare   = 0.0; atmo.Haze = 0.3
 
-print("[MoneyIsland] Map v25 built! Free plot access, machine raiding, PVP hot zone.")
+print("[MoneyIsland] Map v26 built! 20 unique machines, night skybox, CoinRain/GeyserSurge events.")
