@@ -29,10 +29,10 @@ local FLOOR_THEME = {
     [3]={name="War Room",  wall=Color3.fromRGB(52,38,22),   trim=Color3.fromRGB(88,68,38),   light=Color3.fromRGB(255,140,60) },
     [4]={name="Black Ops", wall=Color3.fromRGB(12,12,18),   trim=Color3.fromRGB(52,36,82),   light=Color3.fromRGB(145,60,255) },
 }
-local FLOOR_H = {14, 16, 20, 24}
+local FLOOR_H = {18, 20, 24, 28}
 local PAD_H   = 2
-local BW      = 50
-local BD      = 38
+local BW      = 80
+local BD      = 62
 local BASE_Y  = {PAD_H}
 for f = 2, 4 do BASE_Y[f] = BASE_Y[f-1] + FLOOR_H[f-1] + 2 end
 
@@ -46,32 +46,32 @@ local WLL_COL = Color3.fromRGB(18,18,24)
 
 local GC_DROPPERS = {
     [1]={
-        {name="Pistol Range",  baseCost=100,       costMult=1.9, maxLevel=8},
-        {name="Rifle Station", baseCost=1500,      costMult=1.9, maxLevel=8},
-        {name="Shotgun Rack",  baseCost=8500,      costMult=1.9, maxLevel=8},
-        {name="Ammo Press",    baseCost=32000,     costMult=1.9, maxLevel=8},
+        {id=101,name="Pistol Range",  baseCost=100,       costMult=1.9, maxLevel=8},
+        {id=102,name="Rifle Station", baseCost=1500,      costMult=1.9, maxLevel=8},
+        {id=103,name="Shotgun Rack",  baseCost=8500,      costMult=1.9, maxLevel=8},
+        {id=104,name="Ammo Press",    baseCost=32000,     costMult=1.9, maxLevel=8},
     },
     [2]={
-        {name="SMG Assembly",  baseCost=150000,    costMult=2.0, maxLevel=8},
-        {name="AR Workshop",   baseCost=500000,    costMult=2.0, maxLevel=8},
-        {name="Heavy Forge",   baseCost=1800000,   costMult=2.0, maxLevel=8},
+        {id=201,name="SMG Assembly",  baseCost=150000,    costMult=2.0, maxLevel=8},
+        {id=202,name="AR Workshop",   baseCost=500000,    costMult=2.0, maxLevel=8},
+        {id=203,name="Heavy Forge",   baseCost=1800000,   costMult=2.0, maxLevel=8},
     },
     [3]={
-        {name="Sniper Lab",    baseCost=8000000,   costMult=2.1, maxLevel=8},
-        {name="LMG Factory",   baseCost=32000000,  costMult=2.1, maxLevel=8},
-        {name="Launcher Bay",  baseCost=130000000, costMult=2.1, maxLevel=8},
+        {id=301,name="Sniper Lab",    baseCost=8000000,   costMult=2.1, maxLevel=8},
+        {id=302,name="LMG Factory",   baseCost=32000000,  costMult=2.1, maxLevel=8},
+        {id=303,name="Launcher Bay",  baseCost=130000000, costMult=2.1, maxLevel=8},
     },
     [4]={
-        {name="Minigun Core",  baseCost=750000000,   costMult=2.2, maxLevel=8},
-        {name="Rocket Depot",  baseCost=3500000000,  costMult=2.2, maxLevel=8},
-        {name="Railgun Lab",   baseCost=16000000000, costMult=2.2, maxLevel=8},
+        {id=401,name="Minigun Core",  baseCost=750000000,   costMult=2.2, maxLevel=8},
+        {id=402,name="Rocket Depot",  baseCost=3500000000,  costMult=2.2, maxLevel=8},
+        {id=403,name="Railgun Lab",   baseCost=16000000000, costMult=2.2, maxLevel=8},
     },
 }
 local GC_WEAPONS = {
-    [1]={{name="Pistol",cost=600},{name="Revolver",cost=2500},{name="Shotgun",cost=5000}},
-    [2]={{name="SMG",cost=15000},{name="Assault Rifle",cost=35000},{name="Combat Shotgun",cost=75000}},
-    [3]={{name="Sniper Rifle",cost=250000},{name="LMG",cost=600000},{name="Grenade Launcher",cost=1200000}},
-    [4]={{name="Minigun",cost=5000000},{name="Rocket Launcher",cost=14000000},{name="Railgun",cost=30000000}},
+    [1]={{id=1011,name="Pistol",cost=600},{id=1012,name="Revolver",cost=2500},{id=1013,name="Shotgun",cost=5000}},
+    [2]={{id=1021,name="SMG",cost=15000},{id=1022,name="Assault Rifle",cost=35000},{id=1023,name="Combat Shotgun",cost=75000}},
+    [3]={{id=1031,name="Sniper Rifle",cost=250000},{id=1032,name="LMG",cost=600000},{id=1033,name="Grenade Launcher",cost=1200000}},
+    [4]={{id=1041,name="Minigun",cost=5000000},{id=1042,name="Rocket Launcher",cost=14000000},{id=1043,name="Railgun",cost=30000000}},
 }
 local GC_FLOOR_COSTS = {0, 60000, 4000000, 250000000}
 
@@ -166,7 +166,7 @@ local spinners = {}
 
 local PSIZE = Vector3.new(640,5,640)
 local hx=PSIZE.X/2; local hz=PSIZE.Z/2
-local wH=82; local wT=12
+local wH=115; local wT=12
 
 makeBox(PSIZE, CFrame.new(0,-PSIZE.Y/2,0), PLT_COL, Enum.Material.SmoothPlastic, mapF, "Platform")
 
@@ -238,14 +238,14 @@ end
 -- ============================================================
 
 local SLOTS = {
-    {pos=Vector3.new(-238,0,  0), look=Vector3.new( 1,0, 0)},
-    {pos=Vector3.new( 238,0,  0), look=Vector3.new(-1,0, 0)},
-    {pos=Vector3.new(  0,0,-238), look=Vector3.new( 0,0, 1)},
-    {pos=Vector3.new(  0,0, 238), look=Vector3.new( 0,0,-1)},
-    {pos=Vector3.new(-168,0,-168), look=Vector3.new( 1,0, 1).Unit},
-    {pos=Vector3.new( 168,0,-168), look=Vector3.new(-1,0, 1).Unit},
-    {pos=Vector3.new(-168,0, 168), look=Vector3.new( 1,0,-1).Unit},
-    {pos=Vector3.new( 168,0, 168), look=Vector3.new(-1,0,-1).Unit},
+    {pos=Vector3.new(-256,0,  0), look=Vector3.new( 1,0, 0)},
+    {pos=Vector3.new( 256,0,  0), look=Vector3.new(-1,0, 0)},
+    {pos=Vector3.new(  0,0,-256), look=Vector3.new( 0,0, 1)},
+    {pos=Vector3.new(  0,0, 256), look=Vector3.new( 0,0,-1)},
+    {pos=Vector3.new(-178,0,-178), look=Vector3.new( 1,0, 1).Unit},
+    {pos=Vector3.new( 178,0,-178), look=Vector3.new(-1,0, 1).Unit},
+    {pos=Vector3.new(-178,0, 178), look=Vector3.new( 1,0,-1).Unit},
+    {pos=Vector3.new( 178,0, 178), look=Vector3.new(-1,0,-1).Unit},
 }
 
 -- ============================================================
@@ -444,13 +444,13 @@ local function buildTycoon(slotId, slotData, faction)
         -- ---- Dropper machines ----
         local dlist  = GC_DROPPERS[floor]
         local dCount = #dlist
-        local dXmax  = BW/2-13
-        local dXmin  = -BW/2+8
+        local dXmax  = BW/2-12   -- wider spread for bigger building
+        local dXmin  = -BW/2+14  -- keep clear of left-wall weapon cases
         local floorSurfY = floor==1 and PAD_H or baseY+2
 
         for di, dd in ipairs(dlist) do
             local dx = dCount==1 and (dXmin+dXmax)/2 or dXmin+(di-1)*(dXmax-dXmin)/(dCount-1)
-            local dz = -BD/2+11
+            local dz = -math.floor(BD*0.22)  -- ~1/4 depth from center toward back, clear of weapon cases
             local machF=Instance.new("Folder"); machF.Name="DMach_F"..floor.."_"..di; machF.Parent=flF
             machF:SetAttribute("TycoonId",slotId); machF:SetAttribute("FloorId",floor); machF:SetAttribute("DropperId",di)
 
@@ -487,6 +487,10 @@ local function buildTycoon(slotId, slotData, faction)
                 tierPart(p3,3)
                 local ring=makeBox(Vector3.new(10.5,0.5,10.5),lc(dx,floorSurfY+6.1,dz),fth.light,Enum.Material.Neon,machF,"T3Ring")
                 tierPart(ring,3); addLight(ring,"PointLight",fth.light,16,2.2)
+                -- Animated spinning gear plate on bench top
+                local gear=makeBox(Vector3.new(6,0.3,6),lc(dx,floorSurfY+5.5,dz),fth.light,Enum.Material.Neon,machF,"GearSpin")
+                gear.Transparency=0.35
+                table.insert(spinners,{part=gear, baseCF=lc(dx,floorSurfY+5.5,dz), speed=1.2+di*0.4})
 
             elseif floor==2 then
                 -- ---- BARRACKS: Assembly station with mechanical robotic arm ----
@@ -517,6 +521,10 @@ local function buildTycoon(slotId, slotData, faction)
                 tierPart(crane,3)
                 local craneg=makeBox(Vector3.new(10.5,0.4,0.8),lc(dx,floorSurfY+14.8,dz),fth.light,Enum.Material.Neon,machF,"T3CraneGlow")
                 tierPart(craneg,3); addLight(craneg,"PointLight",fth.light,20,2.2)
+                -- Animated spinning cog on arm tower
+                local cog=makeBox(Vector3.new(3,0.35,3),lc(dx+3,floorSurfY+11.5,dz-2.8),fth.light,Enum.Material.Neon,machF,"CogSpin")
+                cog.Transparency=0.3
+                table.insert(spinners,{part=cog, baseCF=lc(dx+3,floorSurfY+11.5,dz-2.8), speed=-(1.8+di*0.5)})
 
             elseif floor==3 then
                 -- ---- WAR ROOM: High-tech research pod with holographic display ----
@@ -555,6 +563,10 @@ local function buildTycoon(slotId, slotData, faction)
                 tierPart(d2,3); d2:SetAttribute("BaseTrans",0.42)
                 local emit=makeBox(Vector3.new(2.5,2.5,2.5),lc(dx,floorSurfY+16.5,dz),fth.light,Enum.Material.Neon,machF,"T3Emitter")
                 tierPart(emit,3); addLight(emit,"PointLight",fth.light,28,3.5)
+                -- Animated orbit ring around core — always spinning
+                local orbit=makeBox(Vector3.new(8,0.4,8),lc(dx,floorSurfY+9,dz),fth.light,Enum.Material.Neon,machF,"OrbitRing")
+                orbit.Transparency=0.45
+                table.insert(spinners,{part=orbit, baseCF=lc(dx,floorSurfY+9,dz), speed=2.2+di*0.6})
 
             elseif floor==4 then
                 -- ---- BLACK OPS: Experimental energy weapon core ----
@@ -583,10 +595,13 @@ local function buildTycoon(slotId, slotData, faction)
                 local lens=makeBox(Vector3.new(5.5,1.8,5.5),lc(dx,floorSurfY+14.2,dz),faction.accent,Enum.Material.Neon,machF,"MLens")
                 pulse(lens,faction.accent,Color3.fromRGB(255,255,255),1.9)
                 addLight(lens,"SpotLight",faction.accent,38,4.5)
-                -- Spinning energy ring (animated by heartbeat)
+                -- Spinning energy rings (two counter-rotating for portal look)
                 local spinRing=makeBox(Vector3.new(11,0.5,11),lc(dx,floorSurfY+12,dz),faction.accent,Enum.Material.Neon,machF,"MSpinRing")
                 spinRing.Transparency=0.22; addLight(spinRing,"PointLight",faction.accent,16,2.5)
                 table.insert(spinners,{part=spinRing, baseCF=lc(dx,floorSurfY+12,dz), speed=1.6+di*0.35})
+                local spinRing2=makeBox(Vector3.new(14,0.35,14),lc(dx,floorSurfY+9.5,dz),faction.accent,Enum.Material.Neon,machF,"MSpinRing2")
+                spinRing2.Transparency=0.55
+                table.insert(spinners,{part=spinRing2, baseCF=lc(dx,floorSurfY+9.5,dz), speed=-(1.0+di*0.25)})
                 -- [Tier 2] Coil tops reveal (handled via UpgradeTier=2 on coilTop above)
                 -- [Tier 3] Outer energy containment field
                 local field=makeBox(Vector3.new(14,12,14),lc(dx,floorSurfY+3.5+6,dz),faction.accent,Enum.Material.Neon,machF,"T3Field")
@@ -598,7 +613,7 @@ local function buildTycoon(slotId, slotData, faction)
             local btnOffsets = {6.4, 13.2, 14.0, 15.5}
             local upBtn=makeBox(Vector3.new(8.5,0.6,6.5),lc(dx,floorSurfY+btnOffsets[floor],dz),Color3.fromRGB(25,140,55),Enum.Material.SmoothPlastic,machF,"UpBtn_F"..floor.."_"..di)
             upBtn:SetAttribute("TycoonId",slotId); upBtn:SetAttribute("FloorId",floor)
-            upBtn:SetAttribute("DropperId",di); upBtn:SetAttribute("IsUpgradeBtn",true)
+            upBtn:SetAttribute("DropperId",di); upBtn:SetAttribute("ItemId",dd.id); upBtn:SetAttribute("IsUpgradeBtn",true)
             addBB(upBtn, dd.name.."\nLv0  |  "..numFmt(dd.baseCost).." coins", 210, Color3.new(1,1,1), Color3.fromRGB(6,20,10), 20)
             local upPP=Instance.new("ProximityPrompt")
             upPP.ActionText="Upgrade"; upPP.ObjectText=dd.name
@@ -637,7 +652,7 @@ local function buildTycoon(slotId, slotData, faction)
             makeBox(Vector3.new(3.5,2.8,3),  lc(caseX+7,baseY+1.9, wz),fth.trim,Enum.Material.SmoothPlastic,flF,"WPedCol_F"..floor.."_"..wi)
             local wBtn=makeBox(Vector3.new(6.5,0.5,5),lc(caseX+7,baseY+3.3,wz),Color3.fromRGB(18,92,172),Enum.Material.Neon,flF,"WBtn_F"..floor.."_"..wi)
             wBtn:SetAttribute("TycoonId",slotId); wBtn:SetAttribute("FloorId",floor)
-            wBtn:SetAttribute("WeaponId",wi); wBtn:SetAttribute("IsWeaponBtn",true)
+            wBtn:SetAttribute("WeaponId",wi); wBtn:SetAttribute("ItemId",wd.id); wBtn:SetAttribute("IsWeaponBtn",true)
             pulse(wBtn,Color3.fromRGB(18,92,172),Color3.fromRGB(55,145,255),1.3)
             addLight(wBtn,"PointLight",Color3.fromRGB(45,125,255),11,2.2)
             addBB(wBtn, wd.name.."\n"..numFmt(wd.cost).." coins", 195, Color3.new(1,1,1), Color3.fromRGB(5,12,24), 17)

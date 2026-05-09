@@ -34,24 +34,24 @@ local RE = {
 
 local WEAPONS = {
     [1]={
-        {name="Pistol",           damage=12,  range=65,  cooldown=0.75, cost=600    },
-        {name="Revolver",         damage=22,  range=75,  cooldown=1.2,  cost=2500   },
-        {name="Shotgun",          damage=36,  range=30,  cooldown=1.6,  cost=5000   },
+        {id=1011, name="Pistol",           damage=12,  range=65,  cooldown=0.75, cost=600    },
+        {id=1012, name="Revolver",         damage=22,  range=75,  cooldown=1.2,  cost=2500   },
+        {id=1013, name="Shotgun",          damage=36,  range=30,  cooldown=1.6,  cost=5000   },
     },
     [2]={
-        {name="SMG",              damage=18,  range=85,  cooldown=0.35, cost=15000  },
-        {name="Assault Rifle",    damage=32,  range=110, cooldown=0.55, cost=35000  },
-        {name="Combat Shotgun",   damage=48,  range=40,  cooldown=1.0,  cost=75000  },
+        {id=1021, name="SMG",              damage=18,  range=85,  cooldown=0.35, cost=15000  },
+        {id=1022, name="Assault Rifle",    damage=32,  range=110, cooldown=0.55, cost=35000  },
+        {id=1023, name="Combat Shotgun",   damage=48,  range=40,  cooldown=1.0,  cost=75000  },
     },
     [3]={
-        {name="Sniper Rifle",     damage=110, range=250, cooldown=2.2,  cost=250000 },
-        {name="LMG",              damage=42,  range=130, cooldown=0.22, cost=600000 },
-        {name="Grenade Launcher", damage=90,  range=90,  cooldown=2.8,  cost=1200000},
+        {id=1031, name="Sniper Rifle",     damage=110, range=250, cooldown=2.2,  cost=250000 },
+        {id=1032, name="LMG",              damage=42,  range=130, cooldown=0.22, cost=600000 },
+        {id=1033, name="Grenade Launcher", damage=90,  range=90,  cooldown=2.8,  cost=1200000},
     },
     [4]={
-        {name="Minigun",          damage=38,  range=110, cooldown=0.12, cost=5000000 },
-        {name="Rocket Launcher",  damage=180, range=160, cooldown=3.5,  cost=14000000},
-        {name="Railgun",          damage=320, range=350, cooldown=4.5,  cost=30000000},
+        {id=1041, name="Minigun",          damage=38,  range=110, cooldown=0.12, cost=5000000 },
+        {id=1042, name="Rocket Launcher",  damage=180, range=160, cooldown=3.5,  cost=14000000},
+        {id=1043, name="Railgun",          damage=320, range=350, cooldown=4.5,  cost=30000000},
     },
 }
 
@@ -463,15 +463,16 @@ local function showToast(msg, color, duration)
     task.spawn(function()
         while #toastQueue > 0 do
             local t = table.remove(toastQueue, 1)
-            local toast = makeFrame(screen, "Toast", UDim2.new(0,440,0,52), UDim2.new(0.5,-220,0,-62), t.color:Lerp(Color3.fromRGB(7,7,13),0.72))
+            -- Slide in from below, above the bottom action bar (which sits at 1,-104)
+            local toast = makeFrame(screen, "Toast", UDim2.new(0,440,0,52), UDim2.new(0.5,-220,1,62), t.color:Lerp(Color3.fromRGB(7,7,13),0.72))
             corner(toast, 14)
             stroke(toast, t.color, 2)
             toast.ZIndex = 30
             local tl = makeLabel(toast, t.msg, UDim2.new(1,-16,1,-8), UDim2.new(0,8,0,4), Color3.new(1,1,1), Enum.Font.GothamBold)
             tl.ZIndex = 31
-            tween(toast, {Position=UDim2.new(0.5,-220,0,8)}, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
+            tween(toast, {Position=UDim2.new(0.5,-220,1,-166)}, 0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out)
             task.wait(t.dur)
-            tween(toast, {Position=UDim2.new(0.5,-220,0,-62)}, 0.22)
+            tween(toast, {Position=UDim2.new(0.5,-220,1,62)}, 0.22)
             task.wait(0.28); toast:Destroy()
         end
         toastActive = false
