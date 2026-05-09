@@ -1,7 +1,6 @@
--- GunTycoon MainGameServer v2
--- Core economy, tycoon claiming, droppers, weapons, PvP, DataStore
+-- GunTycoon MainGameServer v3
+-- Rebalanced progression, multi-tier machine visuals updated on upgrade
 
--- *** Replace 0 with your Roblox UserId (find it at roblox.com/users/profile) ***
 local OWNER_ID = 0
 
 local Players            = game:GetService("Players")
@@ -12,7 +11,6 @@ local TweenService       = game:GetService("TweenService")
 local Workspace          = game:GetService("Workspace")
 local RunService         = game:GetService("RunService")
 
--- Inline config (no module dependency)
 local Theme = {
     FACTIONS = {
         {name="Red Militia",       primary=Color3.fromRGB(195,40,40),   accent=Color3.fromRGB(255,90,90)  },
@@ -32,20 +30,20 @@ local Theme = {
 }
 
 local GC = {
-    MAX_PLAYERS      = 8,
-    DROPPER_TICK     = 1,
-    RESPAWN_TIME     = 4,
-    PLAYER_MAX_HP    = 150,
-    KILL_STEAL       = 0.18,
-    HIT_STEAL        = 0.01,
-    AWAY_INCOME_RATE = 0.6,
-    DATASTORE_VERSION = "GT_v1",
-    SAVE_INTERVAL    = 60,
-    EVENT_MIN_INTERVAL = 180,
-    EVENT_MAX_INTERVAL = 360,
-    PRESTIGE_MULTIPLIER = 1.5,
-    FLOOR_COSTS = {[1]=0,[2]=5000,[3]=120000,[4]=2500000},
-    PRESTIGE_COSTS = {6000000,30000000,120000000,500000000,2000000000},
+    MAX_PLAYERS       = 8,
+    DROPPER_TICK      = 1,
+    RESPAWN_TIME      = 4,
+    PLAYER_MAX_HP     = 150,
+    KILL_STEAL        = 0.18,
+    HIT_STEAL         = 0.01,
+    AWAY_INCOME_RATE  = 0.6,
+    DATASTORE_VERSION = "GT_v2",
+    SAVE_INTERVAL     = 60,
+    EVENT_MIN_INTERVAL= 180,
+    EVENT_MAX_INTERVAL= 360,
+    PRESTIGE_MULTIPLIER= 1.5,
+    FLOOR_COSTS       = {[1]=0,[2]=60000,[3]=4000000,[4]=250000000},
+    PRESTIGE_COSTS    = {10000000000,100000000000,1000000000000,10000000000000,100000000000000},
     COIN_PACKS = {
         {id=3586040050, coins=10000,  label="Small Pack" },
         {id=3586040263, coins=80000,  label="Medium Pack"},
@@ -65,25 +63,25 @@ local GC = {
     },
     DROPPERS = {
         [1]={
-            {name="Pistol Range", baseRate=3,      baseCost=0,        maxLevel=8,costMult=2.1 },
-            {name="Rifle Station",baseRate=10,     baseCost=200,      maxLevel=8,costMult=2.1 },
-            {name="Shotgun Rack", baseRate=28,     baseCost=700,      maxLevel=8,costMult=2.1 },
-            {name="Ammo Press",   baseRate=70,     baseCost=2500,     maxLevel=8,costMult=2.1 },
+            {name="Pistol Range",  baseRate=5,       baseCost=100,       maxLevel=8, costMult=1.9},
+            {name="Rifle Station", baseRate=18,      baseCost=1500,      maxLevel=8, costMult=1.9},
+            {name="Shotgun Rack",  baseRate=55,      baseCost=8500,      maxLevel=8, costMult=1.9},
+            {name="Ammo Press",    baseRate=150,     baseCost=32000,     maxLevel=8, costMult=1.9},
         },
         [2]={
-            {name="SMG Assembly", baseRate=180,    baseCost=9000,     maxLevel=8,costMult=2.15},
-            {name="AR Workshop",  baseRate=480,    baseCost=25000,    maxLevel=8,costMult=2.15},
-            {name="Heavy Forge",  baseRate=1200,   baseCost=65000,    maxLevel=8,costMult=2.15},
+            {name="SMG Assembly",  baseRate=500,     baseCost=150000,    maxLevel=8, costMult=2.0},
+            {name="AR Workshop",   baseRate=1600,    baseCost=500000,    maxLevel=8, costMult=2.0},
+            {name="Heavy Forge",   baseRate=5000,    baseCost=1800000,   maxLevel=8, costMult=2.0},
         },
         [3]={
-            {name="Sniper Lab",   baseRate=3000,   baseCost=200000,   maxLevel=8,costMult=2.2 },
-            {name="LMG Factory",  baseRate=8000,   baseCost=550000,   maxLevel=8,costMult=2.2 },
-            {name="Launcher Bay", baseRate=22000,  baseCost=1500000,  maxLevel=8,costMult=2.2 },
+            {name="Sniper Lab",    baseRate=20000,   baseCost=8000000,   maxLevel=8, costMult=2.1},
+            {name="LMG Factory",   baseRate=70000,   baseCost=32000000,  maxLevel=8, costMult=2.1},
+            {name="Launcher Bay",  baseRate=250000,  baseCost=130000000, maxLevel=8, costMult=2.1},
         },
         [4]={
-            {name="Minigun Core", baseRate=55000,  baseCost=4000000,  maxLevel=8,costMult=2.3 },
-            {name="Rocket Depot", baseRate=160000, baseCost=12000000, maxLevel=8,costMult=2.3 },
-            {name="Railgun Lab",  baseRate=500000, baseCost=35000000, maxLevel=8,costMult=2.3 },
+            {name="Minigun Core",  baseRate=1000000,  baseCost=750000000,   maxLevel=8, costMult=2.2},
+            {name="Rocket Depot",  baseRate=4500000,  baseCost=3500000000,  maxLevel=8, costMult=2.2},
+            {name="Railgun Lab",   baseRate=20000000, baseCost=16000000000, maxLevel=8, costMult=2.2},
         },
     },
     WEAPONS = {
@@ -117,10 +115,7 @@ local DS = DataStoreService:GetDataStore(GC.DATASTORE_VERSION)
 -- ============================================================
 
 local function makeRemote(name, class)
-    local r = Instance.new(class or "RemoteEvent")
-    r.Name   = name
-    r.Parent = RS
-    return r
+    local r=Instance.new(class or "RemoteEvent"); r.Name=name; r.Parent=RS; return r
 end
 
 local RE = {
@@ -139,13 +134,12 @@ local RE = {
     PrestigeRequest     = makeRemote("PrestigeRequest"),
     EquipWeaponRequest  = makeRemote("EquipWeaponRequest"),
 }
-
 local RF = {
-    GetTycoonData = makeRemote("GetTycoonData", "RemoteFunction"),
+    GetTycoonData = makeRemote("GetTycoonData","RemoteFunction"),
 }
 
 -- ============================================================
--- Player data template
+-- Player data
 -- ============================================================
 
 local function defaultData()
@@ -154,42 +148,38 @@ local function defaultData()
         totalEarned   = 0,
         prestige      = 0,
         tycoonSlot    = nil,
-        floorsUnlocked = { true, false, false, false },
-        dropperLevels  = { {0,0,0,0}, {0,0,0}, {0,0,0}, {0,0,0} },
-        weaponsOwned   = { {false,false,false}, {false,false,false}, {false,false,false}, {false,false,false} },
+        floorsUnlocked = {true,false,false,false},
+        dropperLevels  = {{0,0,0,0},{0,0,0},{0,0,0},{0,0,0}},
+        weaponsOwned   = {{false,false,false},{false,false,false},{false,false,false},{false,false,false}},
         equippedFloor  = 1,
         equippedWeapon = 1,
-        boostExpiry    = 0,  -- unix timestamp for 2x boost
+        boostExpiry    = 0,
     }
 end
 
-local playerData   = {}  -- [userId] = data table
-local dirtyPlayers = {}  -- [userId] = true if needs save
-local slotOwners   = {}  -- [slotId] = userId or nil
+local playerData   = {}
+local dirtyPlayers = {}
+local slotOwners   = {}
 
 -- ============================================================
 -- Persistence
 -- ============================================================
 
 local function loadData(player)
-    local ok, saved = pcall(function()
-        return DS:GetAsync("P_" .. player.UserId)
-    end)
+    local ok,saved=pcall(function() return DS:GetAsync("P_"..player.UserId) end)
     if ok and saved then
-        local d = defaultData()
-        for k, v in pairs(saved) do d[k] = v end
+        local d=defaultData()
+        for k,v in pairs(saved) do d[k]=v end
         return d
     end
     return defaultData()
 end
 
 local function saveData(player)
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d then return end
-    pcall(function()
-        DS:SetAsync("P_" .. player.UserId, d)
-    end)
-    dirtyPlayers[player.UserId] = nil
+    pcall(function() DS:SetAsync("P_"..player.UserId,d) end)
+    dirtyPlayers[player.UserId]=nil
 end
 
 -- ============================================================
@@ -197,49 +187,41 @@ end
 -- ============================================================
 
 local function getMultiplier(data)
-    local base = 1 + (data.prestige * (GC.PRESTIGE_MULTIPLIER - 1))
-    local hasVIP = data._gp and data._gp[GC.PASSES.vip]
-    return base * (hasVIP and 2 or 1) * (tick() < (data.boostExpiry or 0) and 2 or 1)
+    local base=1+(data.prestige*(GC.PRESTIGE_MULTIPLIER-1))
+    local hasVIP=data._gp and data._gp[GC.PASSES.vip]
+    return base*(hasVIP and 2 or 1)*(tick()<(data.boostExpiry or 0) and 2 or 1)
 end
 
 local function formatCoins(n)
-    if n >= 1e9 then return string.format("%.2fB", n/1e9)
-    elseif n >= 1e6 then return string.format("%.2fM", n/1e6)
-    elseif n >= 1e3 then return string.format("%.1fK", n/1e3)
+    if n>=1e12 then return string.format("%.2fT",n/1e12)
+    elseif n>=1e9 then return string.format("%.2fB",n/1e9)
+    elseif n>=1e6 then return string.format("%.2fM",n/1e6)
+    elseif n>=1e3 then return string.format("%.1fK",n/1e3)
     else return tostring(math.floor(n)) end
 end
 
 local function incomePerSec(data, eventBoost)
-    local total = 0
-    for floor = 1, 4 do
+    local total=0
+    for floor=1,4 do
         if data.floorsUnlocked[floor] then
-            local dlist = GC.DROPPERS[floor]
-            for di, dd in ipairs(dlist) do
-                local lv = (data.dropperLevels[floor] or {})[di] or 0
-                if lv > 0 then
-                    total = total + dd.baseRate * (dd.costMult ^ (lv-1))
-                end
+            local dlist=GC.DROPPERS[floor]
+            for di,dd in ipairs(dlist) do
+                local lv=(data.dropperLevels[floor] or {})[di] or 0
+                if lv>0 then total=total+dd.baseRate*(dd.costMult^(lv-1)) end
             end
         end
     end
-    return math.floor(total * getMultiplier(data) * (eventBoost or 1))
+    return math.floor(total*getMultiplier(data)*(eventBoost or 1))
 end
 
 local function sendStats(player)
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d then return end
-    RE.UpdateStats:FireClient(player, {
-        coins       = d.coins,
-        totalEarned = d.totalEarned,
-        prestige    = d.prestige,
-        income      = incomePerSec(d, activeEventBoost),
-        slot        = d.tycoonSlot,
-        floors      = d.floorsUnlocked,
-        droppers    = d.dropperLevels,
-        weapons     = d.weaponsOwned,
-        eqFloor     = d.equippedFloor,
-        eqWeapon    = d.equippedWeapon,
-        boostExpiry = d.boostExpiry,
+    RE.UpdateStats:FireClient(player,{
+        coins=d.coins, totalEarned=d.totalEarned, prestige=d.prestige,
+        income=incomePerSec(d,activeEventBoost), slot=d.tycoonSlot,
+        floors=d.floorsUnlocked, droppers=d.dropperLevels, weapons=d.weaponsOwned,
+        eqFloor=d.equippedFloor, eqWeapon=d.equippedWeapon, boostExpiry=d.boostExpiry,
     })
 end
 
@@ -252,31 +234,28 @@ end
 -- ============================================================
 
 local function hasPass(player, passId)
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d then return false end
-    if d._gp and d._gp[passId] ~= nil then return d._gp[passId] end
-    local ok, result = pcall(function()
-        return MarketplaceService:UserOwnsGamePassAsync(player.UserId, passId)
-    end)
-    if not d._gp then d._gp = {} end
-    d._gp[passId] = ok and result or false
+    if d._gp and d._gp[passId]~=nil then return d._gp[passId] end
+    local ok,result=pcall(function() return MarketplaceService:UserOwnsGamePassAsync(player.UserId,passId) end)
+    if not d._gp then d._gp={} end
+    d._gp[passId]=ok and result or false
     return d._gp[passId]
 end
 
 local function refreshPasses(player)
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d then return end
-    if not d._gp then d._gp = {} end
-    for name, id in pairs(GC.PASSES) do
-        local ok, res = pcall(MarketplaceService.UserOwnsGamePassAsync, MarketplaceService, player.UserId, id)
-        d._gp[id] = ok and res or false
+    if not d._gp then d._gp={} end
+    for name,id in pairs(GC.PASSES) do
+        local ok,res=pcall(MarketplaceService.UserOwnsGamePassAsync,MarketplaceService,player.UserId,id)
+        d._gp[id]=ok and res or false
     end
-    -- Apply speed demon
     if d._gp[GC.PASSES.speedDemon] then
-        local char = player.Character
+        local char=player.Character
         if char then
-            local hum = char:FindFirstChildOfClass("Humanoid")
-            if hum then hum.WalkSpeed = 32 + 16 end
+            local hum=char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.WalkSpeed=32+16 end
         end
     end
 end
@@ -286,83 +265,154 @@ end
 -- ============================================================
 
 local function getTycoonFolder(slotId)
-    return Workspace:FindFirstChild("Tycoons") and Workspace.Tycoons:FindFirstChild("Tycoon_" .. slotId)
+    return Workspace:FindFirstChild("Tycoons") and Workspace.Tycoons:FindFirstChild("Tycoon_"..slotId)
 end
 
-local function updateDropperLabel(slotId, floor, di, level)
-    local t = getTycoonFolder(slotId)
-    if not t then return end
-    local btn = t:FindFirstChild("UpBtn_F"..floor.."_"..di, true)
-    if not btn then return end
-    local bb = btn:FindFirstChild("BillboardGui")
-    local lbl = bb and bb:FindFirstChild("Label")
-    if not lbl then return end
-    local dd = GC.DROPPERS[floor][di]
-    if level >= dd.maxLevel then
-        lbl.Text = dd.name .. "\nMAXED"
-    else
-        local upgradeCost = math.floor(dd.baseCost * (dd.costMult ^ level))
-        lbl.Text = dd.name .. "\nLv"..level.." | "..formatCoins(upgradeCost).." coins"
-    end
+-- Glow colors per floor per visual tier (tier 1=active, 2=enhanced, 3=max)
+local FLOOR_GLOW = {
+    [1]={Color3.fromRGB(120,150,255), Color3.fromRGB(170,200,255), Color3.fromRGB(210,230,255)},
+    [2]={Color3.fromRGB(80,200,80),   Color3.fromRGB(130,255,130), Color3.fromRGB(200,255,200)},
+    [3]={Color3.fromRGB(220,105,40),  Color3.fromRGB(255,155,65),  Color3.fromRGB(255,210,110)},
+    [4]={Color3.fromRGB(120,45,220),  Color3.fromRGB(165,75,255),  Color3.fromRGB(215,140,255)},
+}
+local GLOW_LIGHT = {
+    {range=9,  brightness=1.4},
+    {range=17, brightness=2.8},
+    {range=28, brightness=4.5},
+}
+
+local function getGlowTier(level)
+    if level>=6 then return 3
+    elseif level>=3 then return 2
+    else return 1 end
 end
 
-local function showFloorBarrier(slotId, floor, visible)
-    local t = getTycoonFolder(slotId)
+-- Called after every dropper upgrade, floor reveal, and prestige reset.
+-- Updates glow color/intensity and reveals tier-2/3 machine parts.
+local function updateDropperVisual(slotId, floor, di, level)
+    local t=getTycoonFolder(slotId)
     if not t then return end
-    local barrier = t:FindFirstChild("Barrier_F"..floor, true)
-    if barrier then
-        barrier.Transparency = visible and 0.45 or 1
-        barrier.CanCollide    = visible
-    end
-end
+    local machF=t:FindFirstChild("DMach_F"..floor.."_"..di,true)
+    if not machF then return end
 
-local function revealFloor(slotId, floor)
-    local t = getTycoonFolder(slotId)
-    if not t then return end
-    local floorFolder = t:FindFirstChild("Floor_"..floor)
-    if not floorFolder then return end
-    for _, desc in ipairs(floorFolder:GetDescendants()) do
+    local tier       = getGlowTier(level)
+    local glowColor  = FLOOR_GLOW[floor][tier]
+    local lightData  = GLOW_LIGHT[tier]
+
+    for _,desc in ipairs(machF:GetDescendants()) do
         if desc:IsA("BasePart") then
-            local ot = desc:GetAttribute("OrigTrans")
-            local oc = desc:GetAttribute("OrigCollide")
-            desc.Transparency = ot ~= nil and ot or 0
-            desc.CanCollide   = oc ~= nil and oc or true
-        elseif desc:IsA("ProximityPrompt") then
-            desc.Enabled = true
+            local partTier=desc:GetAttribute("UpgradeTier")
+            if partTier then
+                -- Reveal or hide tier parts based on current tier
+                if partTier<=tier then
+                    local baseTrans=desc:GetAttribute("BaseTrans") or 0
+                    desc.Transparency=baseTrans
+                else
+                    desc.Transparency=1
+                end
+                desc.CanCollide=false
+            end
+            -- Update glow part color and light
+            if desc:GetAttribute("IsGlow") then
+                desc.Color=glowColor
+                local lt=desc:FindFirstChildOfClass("PointLight")
+                if lt then lt.Color=glowColor; lt.Range=lightData.range; lt.Brightness=lightData.brightness end
+            end
         end
     end
 end
 
-local function hideFloor(slotId, floor)
-    local t = getTycoonFolder(slotId)
+local function updateDropperLabel(slotId, floor, di, level)
+    local t=getTycoonFolder(slotId)
     if not t then return end
-    local floorFolder = t:FindFirstChild("Floor_"..floor)
+    local btn=t:FindFirstChild("UpBtn_F"..floor.."_"..di,true)
+    if not btn then return end
+    local bb=btn:FindFirstChild("BillboardGui")
+    local lbl=bb and bb:FindFirstChild("Label")
+    if not lbl then return end
+    local dd=GC.DROPPERS[floor][di]
+    if level>=dd.maxLevel then
+        lbl.Text=dd.name.."\nMAXED"
+    else
+        local upgradeCost=math.floor(dd.baseCost*(dd.costMult^level))
+        lbl.Text=dd.name.."\nLv"..level.."  |  "..formatCoins(upgradeCost).." coins"
+    end
+end
+
+local function showFloorBarrier(slotId,floor,visible)
+    local t=getTycoonFolder(slotId)
+    if not t then return end
+    local barrier=t:FindFirstChild("Barrier_F"..floor,true)
+    if barrier then
+        barrier.Transparency=visible and 0.45 or 1
+        barrier.CanCollide=visible
+    end
+end
+
+local function revealFloor(slotId,floor)
+    local t=getTycoonFolder(slotId)
+    if not t then return end
+    local floorFolder=t:FindFirstChild("Floor_"..floor)
     if not floorFolder then return end
-    for _, desc in ipairs(floorFolder:GetDescendants()) do
+    for _,desc in ipairs(floorFolder:GetDescendants()) do
         if desc:IsA("BasePart") then
-            desc.Transparency = 1
-            desc.CanCollide   = false
+            local ot=desc:GetAttribute("OrigTrans")
+            local oc=desc:GetAttribute("OrigCollide")
+            desc.Transparency=ot~=nil and ot or 0
+            desc.CanCollide  =oc~=nil and oc or true
         elseif desc:IsA("ProximityPrompt") then
-            desc.Enabled = false
+            desc.Enabled=true
+        end
+    end
+    -- Apply correct visual tier to all droppers on this floor
+    local player=nil
+    for _,p in ipairs(Players:GetPlayers()) do
+        local d=playerData[p.UserId]
+        if d and d.tycoonSlot==slotId then player=p; break end
+    end
+    if player then
+        local d=playerData[player.UserId]
+        if d then
+            local dlist=GC.DROPPERS[floor]
+            for di=1,#dlist do
+                local lv=(d.dropperLevels[floor] or {})[di] or 0
+                if lv>0 then
+                    updateDropperVisual(slotId,floor,di,lv)
+                end
+            end
+        end
+    end
+end
+
+local function hideFloor(slotId,floor)
+    local t=getTycoonFolder(slotId)
+    if not t then return end
+    local floorFolder=t:FindFirstChild("Floor_"..floor)
+    if not floorFolder then return end
+    for _,desc in ipairs(floorFolder:GetDescendants()) do
+        if desc:IsA("BasePart") then
+            desc.Transparency=1; desc.CanCollide=false
+        elseif desc:IsA("ProximityPrompt") then
+            desc.Enabled=false
         end
     end
 end
 
 local function updateTycoonForPlayer(player)
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d or not d.tycoonSlot then return end
-    local slotId = d.tycoonSlot
-    -- Update dropper labels
-    for floor = 1, 4 do
+    local slotId=d.tycoonSlot
+    for floor=1,4 do
         if d.floorsUnlocked[floor] then
-            showFloorBarrier(slotId, floor, false)
-            local dlist = GC.DROPPERS[floor]
-            for di = 1, #dlist do
-                local lv = (d.dropperLevels[floor] or {})[di] or 0
-                updateDropperLabel(slotId, floor, di, lv)
+            showFloorBarrier(slotId,floor,false)
+            local dlist=GC.DROPPERS[floor]
+            for di=1,#dlist do
+                local lv=(d.dropperLevels[floor] or {})[di] or 0
+                updateDropperLabel(slotId,floor,di,lv)
+                if lv>0 then updateDropperVisual(slotId,floor,di,lv) end
             end
         else
-            showFloorBarrier(slotId, floor, true)
+            showFloorBarrier(slotId,floor,true)
         end
     end
 end
@@ -372,54 +422,47 @@ end
 -- ============================================================
 
 local function releaseTycoon(player)
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d or not d.tycoonSlot then return end
-    local slot = d.tycoonSlot
-    slotOwners[slot] = nil
-    d.tycoonSlot = nil
-    -- Reset claim button billboard
-    local t = getTycoonFolder(slot)
+    local slot=d.tycoonSlot
+    slotOwners[slot]=nil; d.tycoonSlot=nil
+    local t=getTycoonFolder(slot)
     if t then
-        local btn = t:FindFirstChild("ClaimButton", true)
+        local btn=t:FindFirstChild("ClaimButton",true)
         if btn then
-            local bb = btn:FindFirstChildOfClass("BillboardGui")
+            local bb=btn:FindFirstChildOfClass("BillboardGui")
             if bb and bb:FindFirstChild("Label") then
-                local faction = Theme.FACTIONS[slot]
-                bb.Label.Text = "CLAIM\n" .. faction.name
+                local faction=Theme.FACTIONS[slot]
+                bb.Label.Text="CLAIM\n"..faction.name
             end
         end
     end
     sendStats(player)
 end
 
-local function claimTycoon(player, slotId)
-    local d = playerData[player.UserId]
-    if not d then return false, "Not loaded" end
-    if d.tycoonSlot then return false, "Already have a tycoon" end
-    if slotOwners[slotId] then return false, "Already claimed" end
-    slotOwners[slotId] = player.UserId
-    d.tycoonSlot = slotId
-    -- First dropper auto-owned (level 1)
-    if not d.dropperLevels[1] then d.dropperLevels[1] = {} end
-    if (d.dropperLevels[1][1] or 0) == 0 then
-        d.dropperLevels[1][1] = 1
-    end
-    -- Update claim button
-    local t = getTycoonFolder(slotId)
+local function claimTycoon(player,slotId)
+    local d=playerData[player.UserId]
+    if not d then return false,"Not loaded" end
+    if d.tycoonSlot then return false,"Already have a tycoon" end
+    if slotOwners[slotId] then return false,"Already claimed" end
+    slotOwners[slotId]=player.UserId; d.tycoonSlot=slotId
+    if not d.dropperLevels[1] then d.dropperLevels[1]={} end
+    if (d.dropperLevels[1][1] or 0)==0 then d.dropperLevels[1][1]=1 end
+    local t=getTycoonFolder(slotId)
     if t then
-        local btn = t:FindFirstChild("ClaimButton", true)
+        local btn=t:FindFirstChild("ClaimButton",true)
         if btn then
-            local bb = btn:FindFirstChildOfClass("BillboardGui")
+            local bb=btn:FindFirstChildOfClass("BillboardGui")
             if bb and bb:FindFirstChild("Label") then
-                bb.Label.Text = player.DisplayName .. "\nowner"
+                bb.Label.Text=player.DisplayName.."\nowner"
             end
         end
     end
     updateTycoonForPlayer(player)
-    revealFloor(slotId, 1)
+    revealFloor(slotId,1)
     sendStats(player)
-    dirtyPlayers[player.UserId] = true
-    notify(player, "Tycoon claimed! Build up your arsenal.", Color3.fromRGB(80,255,100))
+    dirtyPlayers[player.UserId]=true
+    notify(player,"Tycoon claimed! Build up your arsenal.",Color3.fromRGB(80,255,100))
     return true
 end
 
@@ -427,31 +470,36 @@ end
 -- Dropper upgrades
 -- ============================================================
 
-local function upgradeDropper(player, floor, di)
-    local d = playerData[player.UserId]
-    if not d then return false, "Not loaded" end
-    if not d.tycoonSlot then return false, "No tycoon" end
-    if not d.floorsUnlocked[floor] then return false, "Floor locked" end
-    if not GC.DROPPERS[floor] or not GC.DROPPERS[floor][di] then return false, "Invalid" end
-
-    local dd  = GC.DROPPERS[floor][di]
-    if not d.dropperLevels[floor] then d.dropperLevels[floor] = {} end
-    local lv  = d.dropperLevels[floor][di] or 0
-    if lv >= dd.maxLevel then return false, "Already maxed" end
-
-    -- First dropper on floor 1 is free (level 0 -> 1)
-    local cost = lv == 0 and dd.baseCost or math.floor(dd.baseCost * (dd.costMult ^ lv))
-    -- Apply Black Market event discount
-    if activeEventDiscount then cost = math.floor(cost * (1 - activeEventDiscount)) end
-
-    if d.coins < cost then return false, "Not enough coins (need " .. formatCoins(cost) .. ")" end
-    d.coins = d.coins - cost
-    d.dropperLevels[floor][di] = lv + 1
-    updateDropperLabel(d.tycoonSlot, floor, di, lv + 1)
-    dirtyPlayers[player.UserId] = true
+local function upgradeDropper(player,floor,di)
+    local d=playerData[player.UserId]
+    if not d then return false,"Not loaded" end
+    if not d.tycoonSlot then return false,"No tycoon" end
+    if not d.floorsUnlocked[floor] then return false,"Floor locked" end
+    if not GC.DROPPERS[floor] or not GC.DROPPERS[floor][di] then return false,"Invalid" end
+    local dd=GC.DROPPERS[floor][di]
+    if not d.dropperLevels[floor] then d.dropperLevels[floor]={} end
+    local lv=d.dropperLevels[floor][di] or 0
+    if lv>=dd.maxLevel then return false,"Already maxed" end
+    local cost=lv==0 and dd.baseCost or math.floor(dd.baseCost*(dd.costMult^lv))
+    if activeEventDiscount then cost=math.floor(cost*(1-activeEventDiscount)) end
+    if d.coins<cost then return false,"Not enough coins (need "..formatCoins(cost)..")" end
+    d.coins=d.coins-cost
+    d.dropperLevels[floor][di]=lv+1
+    local newLevel=lv+1
+    updateDropperLabel(d.tycoonSlot,floor,di,newLevel)
+    updateDropperVisual(d.tycoonSlot,floor,di,newLevel)
+    -- Flash glow to white on upgrade, then tween back to tier color
+    local t=getTycoonFolder(d.tycoonSlot)
+    local glowPart=t and t:FindFirstChild("DGlow_F"..floor.."_"..di,true)
+    if glowPart and glowPart:IsA("BasePart") then
+        local prevColor=glowPart.Color
+        glowPart.Color=Color3.fromRGB(255,255,255)
+        TweenService:Create(glowPart,TweenInfo.new(0.6,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{Color=FLOOR_GLOW[floor][getGlowTier(newLevel)]}):Play()
+    end
+    dirtyPlayers[player.UserId]=true
     sendStats(player)
-    notify(player, dd.name .. " upgraded to Lv" .. (lv+1), Color3.fromRGB(80,200,255))
-    RE.DropperPing:FireClient(player, floor, di)
+    notify(player,dd.name.." upgraded to Lv"..newLevel,Color3.fromRGB(80,200,255))
+    RE.DropperPing:FireClient(player,floor,di)
     return true
 end
 
@@ -459,24 +507,22 @@ end
 -- Floor unlock
 -- ============================================================
 
-local function unlockFloor(player, floor)
-    local d = playerData[player.UserId]
-    if not d then return false, "Not loaded" end
-    if not d.tycoonSlot then return false, "No tycoon" end
-    if d.floorsUnlocked[floor] then return false, "Already unlocked" end
-    if floor > 1 and not d.floorsUnlocked[floor-1] then return false, "Unlock previous floor first" end
-
-    local cost = GC.FLOOR_COSTS[floor]
-    if activeEventDiscount then cost = math.floor(cost * (1 - activeEventDiscount)) end
-    if d.coins < cost then return false, "Need " .. formatCoins(cost) .. " coins" end
-
-    d.coins = d.coins - cost
-    d.floorsUnlocked[floor] = true
-    showFloorBarrier(d.tycoonSlot, floor, false)
-    revealFloor(d.tycoonSlot, floor)
-    dirtyPlayers[player.UserId] = true
+local function unlockFloor(player,floor)
+    local d=playerData[player.UserId]
+    if not d then return false,"Not loaded" end
+    if not d.tycoonSlot then return false,"No tycoon" end
+    if d.floorsUnlocked[floor] then return false,"Already unlocked" end
+    if floor>1 and not d.floorsUnlocked[floor-1] then return false,"Unlock previous floor first" end
+    local cost=GC.FLOOR_COSTS[floor]
+    if activeEventDiscount then cost=math.floor(cost*(1-activeEventDiscount)) end
+    if d.coins<cost then return false,"Need "..formatCoins(cost).." coins" end
+    d.coins=d.coins-cost
+    d.floorsUnlocked[floor]=true
+    showFloorBarrier(d.tycoonSlot,floor,false)
+    revealFloor(d.tycoonSlot,floor)
+    dirtyPlayers[player.UserId]=true
     sendStats(player)
-    notify(player, "Floor " .. floor .. " unlocked: " .. Theme.FLOORS[floor].name .. "!", Color3.fromRGB(255,200,50))
+    notify(player,"Floor "..floor.." unlocked: "..Theme.FLOORS[floor].name.."!",Color3.fromRGB(255,200,50))
     return true
 end
 
@@ -484,36 +530,33 @@ end
 -- Weapon purchase & equip
 -- ============================================================
 
-local function buyWeapon(player, floor, wi)
-    local d = playerData[player.UserId]
+local function buyWeapon(player,floor,wi)
+    local d=playerData[player.UserId]
     if not d then return false end
-    if not d.tycoonSlot then return false, "No tycoon" end
-    if not d.floorsUnlocked[floor] then return false, "Floor locked" end
-    local wData = GC.WEAPONS[floor] and GC.WEAPONS[floor][wi]
-    if not wData then return false, "Invalid weapon" end
-    if not d.weaponsOwned[floor] then d.weaponsOwned[floor] = {} end
-    if d.weaponsOwned[floor][wi] then return false, "Already owned" end
-
-    local cost = wData.cost
-    if activeEventDiscount then cost = math.floor(cost * (1 - activeEventDiscount)) end
-    if d.coins < cost then return false, "Need " .. formatCoins(cost) end
-
-    d.coins = d.coins - cost
-    d.weaponsOwned[floor][wi] = true
-    dirtyPlayers[player.UserId] = true
+    if not d.tycoonSlot then return false,"No tycoon" end
+    if not d.floorsUnlocked[floor] then return false,"Floor locked" end
+    local wData=GC.WEAPONS[floor] and GC.WEAPONS[floor][wi]
+    if not wData then return false,"Invalid weapon" end
+    if not d.weaponsOwned[floor] then d.weaponsOwned[floor]={} end
+    if d.weaponsOwned[floor][wi] then return false,"Already owned" end
+    local cost=wData.cost
+    if activeEventDiscount then cost=math.floor(cost*(1-activeEventDiscount)) end
+    if d.coins<cost then return false,"Need "..formatCoins(cost) end
+    d.coins=d.coins-cost
+    d.weaponsOwned[floor][wi]=true
+    dirtyPlayers[player.UserId]=true
     sendStats(player)
-    notify(player, wData.name .. " purchased!", Color3.fromRGB(255,160,50))
+    notify(player,wData.name.." purchased!",Color3.fromRGB(255,160,50))
     return true
 end
 
-local function equipWeapon(player, floor, wi)
-    local d = playerData[player.UserId]
+local function equipWeapon(player,floor,wi)
+    local d=playerData[player.UserId]
     if not d then return end
     if not (d.weaponsOwned[floor] and d.weaponsOwned[floor][wi]) then return end
-    d.equippedFloor  = floor
-    d.equippedWeapon = wi
-    local wData = GC.WEAPONS[floor][wi]
-    RE.WeaponEquipped:FireClient(player, floor, wi, wData)
+    d.equippedFloor=floor; d.equippedWeapon=wi
+    local wData=GC.WEAPONS[floor][wi]
+    RE.WeaponEquipped:FireClient(player,floor,wi,wData)
     sendStats(player)
 end
 
@@ -522,127 +565,106 @@ end
 -- ============================================================
 
 local function prestige(player)
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d then return false end
-    local prestigeIndex = math.min(d.prestige + 1, #GC.PRESTIGE_COSTS)
-    local cost = GC.PRESTIGE_COSTS[prestigeIndex]
-    if hasPass(player, GC.PASSES.prestigeBoost) then
-        cost = math.floor(cost * 0.8)
-    end
-    if d.coins < cost then return false, "Need " .. formatCoins(cost) .. " coins to prestige" end
-
-    d.coins         = d.coins - cost
-    d.prestige      = d.prestige + 1
-    d.floorsUnlocked = { true, false, false, false }
-    d.dropperLevels  = { {1,0,0,0}, {0,0,0}, {0,0,0}, {0,0,0} }
-    d.weaponsOwned   = { {false,false,false}, {false,false,false}, {false,false,false}, {false,false,false} }
-    d.equippedFloor  = 1
-    d.equippedWeapon = 1
-
+    local prestigeIndex=math.min(d.prestige+1,#GC.PRESTIGE_COSTS)
+    local cost=GC.PRESTIGE_COSTS[prestigeIndex]
+    if hasPass(player,GC.PASSES.prestigeBoost) then cost=math.floor(cost*0.8) end
+    if d.coins<cost then return false,"Need "..formatCoins(cost).." coins to prestige" end
+    d.coins=d.coins-cost
+    d.prestige=d.prestige+1
+    d.floorsUnlocked={true,false,false,false}
+    d.dropperLevels={{1,0,0,0},{0,0,0},{0,0,0},{0,0,0}}
+    d.weaponsOwned={{false,false,false},{false,false,false},{false,false,false},{false,false,false}}
+    d.equippedFloor=1; d.equippedWeapon=1
     if d.tycoonSlot then
-        for fl = 2, 4 do hideFloor(d.tycoonSlot, fl) end
-        revealFloor(d.tycoonSlot, 1)
+        for fl=2,4 do hideFloor(d.tycoonSlot,fl) end
+        revealFloor(d.tycoonSlot,1)
         updateTycoonForPlayer(player)
-        for fl = 2, 4 do showFloorBarrier(d.tycoonSlot, fl, true) end
-        for fl = 1, 4 do
-            for di = 1, #GC.DROPPERS[fl] do
-                updateDropperLabel(d.tycoonSlot, fl, di, 0)
+        for fl=2,4 do showFloorBarrier(d.tycoonSlot,fl,true) end
+        -- Reset all dropper visuals to tier 1
+        for fl=1,4 do
+            for di=1,#GC.DROPPERS[fl] do
+                local lv=(d.dropperLevels[fl] or {})[di] or 0
+                if lv>0 then
+                    updateDropperVisual(d.tycoonSlot,fl,di,lv)
+                    updateDropperLabel(d.tycoonSlot,fl,di,lv)
+                else
+                    updateDropperLabel(d.tycoonSlot,fl,di,0)
+                end
             end
         end
     end
-
-    dirtyPlayers[player.UserId] = true
+    dirtyPlayers[player.UserId]=true
     sendStats(player)
-    notify(player, "PRESTIGE " .. d.prestige .. "! You now earn " .. string.format("%.0f%%", getMultiplier(d)*100) .. " of base income.", Color3.fromRGB(255,215,0), 6)
+    notify(player,"PRESTIGE "..d.prestige.."! You now earn "..string.format("%.0f%%",getMultiplier(d)*100).." of base income.",Color3.fromRGB(255,215,0),6)
     return true
 end
 
 -- ============================================================
--- Combat (server-side hit validation)
+-- Combat
 -- ============================================================
 
 local activeEventBoost    = 1
 local activeEventDiscount = nil
 local activeEventDamage   = 1
-local playerHP = {}  -- [userId] = hp
+local playerHP = {}
 
 local function getHP(userId)
-    if not playerHP[userId] then playerHP[userId] = GC.PLAYER_MAX_HP end
+    if not playerHP[userId] then playerHP[userId]=GC.PLAYER_MAX_HP end
     return playerHP[userId]
 end
 
 local function getWeaponData(player)
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d then return nil end
-    local wData = GC.WEAPONS[d.equippedFloor] and GC.WEAPONS[d.equippedFloor][d.equippedWeapon]
-    return wData
+    return GC.WEAPONS[d.equippedFloor] and GC.WEAPONS[d.equippedFloor][d.equippedWeapon]
 end
 
-RE.WeaponFire.OnServerEvent:Connect(function(shooter, targetPlayer)
+RE.WeaponFire.OnServerEvent:Connect(function(shooter,targetPlayer)
     if not targetPlayer or not targetPlayer:IsA("Player") then return end
-    if targetPlayer == shooter then return end
-    local attackerData = playerData[shooter.UserId]
-    local wData = getWeaponData(shooter)
+    if targetPlayer==shooter then return end
+    local attackerData=playerData[shooter.UserId]
+    local wData=getWeaponData(shooter)
     if not wData then return end
-
-    -- Validate attacker has character
-    local aChar = shooter.Character
-    local tChar = targetPlayer.Character
+    local aChar=shooter.Character; local tChar=targetPlayer.Character
     if not aChar or not tChar then return end
-    local aRoot = aChar:FindFirstChild("HumanoidRootPart")
-    local tRoot = tChar:FindFirstChild("HumanoidRootPart")
+    local aRoot=aChar:FindFirstChild("HumanoidRootPart")
+    local tRoot=tChar:FindFirstChild("HumanoidRootPart")
     if not aRoot or not tRoot then return end
-
-    -- Range check (server-side validation)
-    local dist = (aRoot.Position - tRoot.Position).Magnitude
-    if dist > wData.range + 15 then return end  -- 15 stud server-side leniency
-
-    local damage = math.floor(wData.damage * activeEventDamage)
-    local hasElite = hasPass(shooter, GC.PASSES.luckyCharm)  -- bonus damage
-
-    local curHP = getHP(targetPlayer.UserId)
-    curHP = math.max(0, curHP - damage)
-    playerHP[targetPlayer.UserId] = curHP
-
-    RE.PlayerHit:FireClient(targetPlayer, shooter.DisplayName, damage, curHP)
-
-    -- Coin steal on hit
-    local targetData = playerData[targetPlayer.UserId]
-    if targetData and targetData.coins > 0 then
-        local stolen = math.floor(targetData.coins * GC.HIT_STEAL)
-        if stolen > 0 then
-            targetData.coins = targetData.coins - stolen
-            attackerData.coins = attackerData.coins + stolen
-            dirtyPlayers[targetPlayer.UserId] = true
-            dirtyPlayers[shooter.UserId] = true
+    local dist=(aRoot.Position-tRoot.Position).Magnitude
+    if dist>wData.range+15 then return end
+    local damage=math.floor(wData.damage*activeEventDamage)
+    local curHP=getHP(targetPlayer.UserId)
+    curHP=math.max(0,curHP-damage)
+    playerHP[targetPlayer.UserId]=curHP
+    RE.PlayerHit:FireClient(targetPlayer,shooter.DisplayName,damage,curHP)
+    local targetData=playerData[targetPlayer.UserId]
+    if targetData and targetData.coins>0 then
+        local stolen=math.floor(targetData.coins*GC.HIT_STEAL)
+        if stolen>0 then
+            targetData.coins=targetData.coins-stolen
+            attackerData.coins=attackerData.coins+stolen
+            dirtyPlayers[targetPlayer.UserId]=true
+            dirtyPlayers[shooter.UserId]=true
         end
     end
-
-    -- Kill
-    if curHP <= 0 then
-        playerHP[targetPlayer.UserId] = GC.PLAYER_MAX_HP
-
-        local stolen = math.floor((targetData and targetData.coins or 0) * GC.KILL_STEAL)
-        if stolen > 0 and targetData then
-            targetData.coins = targetData.coins - stolen
-            attackerData.coins = attackerData.coins + stolen
-            dirtyPlayers[targetPlayer.UserId] = true
-            dirtyPlayers[shooter.UserId] = true
-            notify(shooter, "KILL! Stole " .. formatCoins(stolen) .. " coins from " .. targetPlayer.DisplayName, Color3.fromRGB(255,80,80), 4)
+    if curHP<=0 then
+        playerHP[targetPlayer.UserId]=GC.PLAYER_MAX_HP
+        local stolen=math.floor((targetData and targetData.coins or 0)*GC.KILL_STEAL)
+        if stolen>0 and targetData then
+            targetData.coins=targetData.coins-stolen
+            attackerData.coins=attackerData.coins+stolen
+            dirtyPlayers[targetPlayer.UserId]=true
+            dirtyPlayers[shooter.UserId]=true
+            notify(shooter,"KILL! Stole "..formatCoins(stolen).." coins from "..targetPlayer.DisplayName,Color3.fromRGB(255,80,80),4)
         end
-
-        RE.PlayerKilled:FireClient(targetPlayer, shooter.DisplayName, stolen)
-        RE.KillFeed:FireAllClients(shooter.DisplayName, targetPlayer.DisplayName)
-
-        -- Respawn
-        task.delay(GC.RESPAWN_TIME, function()
-            if targetPlayer and targetPlayer.Parent then
-                targetPlayer:LoadCharacter()
-            end
+        RE.PlayerKilled:FireClient(targetPlayer,shooter.DisplayName,stolen)
+        RE.KillFeed:FireAllClients(shooter.DisplayName,targetPlayer.DisplayName)
+        task.delay(GC.RESPAWN_TIME,function()
+            if targetPlayer and targetPlayer.Parent then targetPlayer:LoadCharacter() end
         end)
-
-        sendStats(shooter)
-        sendStats(targetPlayer)
+        sendStats(shooter); sendStats(targetPlayer)
     end
 end)
 
@@ -653,43 +675,35 @@ end)
 task.spawn(function()
     while true do
         task.wait(GC.DROPPER_TICK)
-        for _, player in ipairs(Players:GetPlayers()) do
-            local d = playerData[player.UserId]
+        for _,player in ipairs(Players:GetPlayers()) do
+            local d=playerData[player.UserId]
             if not d then continue end
-
-            -- Lucky Charm: chance for 8x bonus tick
-            local mult = 1
-            if hasPass(player, GC.PASSES.luckyCharm) and math.random() < 0.06 then
-                mult = 8
-                notify(player, "Lucky Jackpot! 8x income this tick!", Color3.fromRGB(255,215,0), 2)
+            local mult=1
+            if hasPass(player,GC.PASSES.luckyCharm) and math.random()<0.06 then
+                mult=8
+                notify(player,"Lucky Jackpot! 8x income this tick!",Color3.fromRGB(255,215,0),2)
             end
-
-            local income = incomePerSec(d, activeEventBoost) * mult
-
-            -- Away penalty unless autoFarm pass
-            local isOnTycoon = false
+            local income=incomePerSec(d,activeEventBoost)*mult
+            local isOnTycoon=false
             if d.tycoonSlot then
-                local tFolder = getTycoonFolder(d.tycoonSlot)
-                local char     = player.Character
+                local tFolder=getTycoonFolder(d.tycoonSlot)
+                local char=player.Character
                 if tFolder and char then
-                    local root = char:FindFirstChild("HumanoidRootPart")
-                    local pad  = tFolder:FindFirstChild("Pad")
+                    local root=char:FindFirstChild("HumanoidRootPart")
+                    local pad=tFolder:FindFirstChild("Pad")
                     if root and pad then
-                        local rel = pad.CFrame:PointToObjectSpace(root.Position)
-                        isOnTycoon = math.abs(rel.X) < 40 and math.abs(rel.Z) < 35
+                        local rel=pad.CFrame:PointToObjectSpace(root.Position)
+                        isOnTycoon=math.abs(rel.X)<40 and math.abs(rel.Z)<35
                     end
                 end
             end
-
-            if not isOnTycoon and not hasPass(player, GC.PASSES.autoFarm) then
-                income = math.floor(income * GC.AWAY_INCOME_RATE)
+            if not isOnTycoon and not hasPass(player,GC.PASSES.autoFarm) then
+                income=math.floor(income*GC.AWAY_INCOME_RATE)
             end
-
-            if income > 0 then
-                d.coins       = d.coins + income
-                d.totalEarned = d.totalEarned + income
-                dirtyPlayers[player.UserId] = true
-                RE.IncomeUpdate:FireClient(player, income)
+            if income>0 then
+                d.coins=d.coins+income; d.totalEarned=d.totalEarned+income
+                dirtyPlayers[player.UserId]=true
+                RE.IncomeUpdate:FireClient(player,income)
             end
         end
     end
@@ -701,208 +715,177 @@ end)
 
 task.spawn(function()
     while true do
-        task.wait(math.random(GC.EVENT_MIN_INTERVAL, GC.EVENT_MAX_INTERVAL))
-        local evData = GC.EVENTS[math.random(#GC.EVENTS)]
-        activeEventBoost    = evData.incomeBoost   or 1
-        activeEventDamage   = evData.damageBoost   or 1
-        activeEventDiscount = evData.shopDiscount  or nil
-        RE.RandomEvent:FireAllClients(evData.name, evData.color, evData.duration, true)
+        task.wait(math.random(GC.EVENT_MIN_INTERVAL,GC.EVENT_MAX_INTERVAL))
+        local evData=GC.EVENTS[math.random(#GC.EVENTS)]
+        activeEventBoost   =evData.incomeBoost  or 1
+        activeEventDamage  =evData.damageBoost  or 1
+        activeEventDiscount=evData.shopDiscount or nil
+        RE.RandomEvent:FireAllClients(evData.name,evData.color,evData.duration,true)
         task.wait(evData.duration)
-        activeEventBoost    = 1
-        activeEventDamage   = 1
-        activeEventDiscount = nil
-        RE.RandomEvent:FireAllClients(evData.name, evData.color, 0, false)
+        activeEventBoost=1; activeEventDamage=1; activeEventDiscount=nil
+        RE.RandomEvent:FireAllClients(evData.name,evData.color,0,false)
     end
 end)
 
 -- ============================================================
--- ProximityPrompt connections (after map builds)
+-- ProximityPrompt connections
 -- ============================================================
 
-task.delay(5, function()
-    local tycoons = Workspace:WaitForChild("Tycoons", 30)
+task.delay(5,function()
+    local tycoons=Workspace:WaitForChild("Tycoons",30)
     if not tycoons then return end
 
-    for _, tFolder in ipairs(tycoons:GetChildren()) do
-        for _, desc in ipairs(tFolder:GetDescendants()) do
+    for _,tFolder in ipairs(tycoons:GetChildren()) do
+        for _,desc in ipairs(tFolder:GetDescendants()) do
             if desc:IsA("ProximityPrompt") then
-                local parent = desc.Parent
+                local parent=desc.Parent
                 if not parent then continue end
 
                 if parent:GetAttribute("IsClaimBtn") then
-                    local slotId = parent:GetAttribute("TycoonId")
+                    local slotId=parent:GetAttribute("TycoonId")
                     desc.Triggered:Connect(function(player)
                         if slotOwners[slotId] then
-                            notify(player, "This tycoon is already claimed!", Color3.fromRGB(255,80,80))
-                            return
+                            notify(player,"This tycoon is already claimed!",Color3.fromRGB(255,80,80)); return
                         end
-                        claimTycoon(player, slotId)
+                        claimTycoon(player,slotId)
                     end)
 
                 elseif parent:GetAttribute("IsUpgradeBtn") then
-                    local slotId = parent:GetAttribute("TycoonId")
-                    local floor  = parent:GetAttribute("FloorId")
-                    local di     = parent:GetAttribute("DropperId")
+                    local slotId=parent:GetAttribute("TycoonId")
+                    local floor =parent:GetAttribute("FloorId")
+                    local di    =parent:GetAttribute("DropperId")
                     desc.Triggered:Connect(function(player)
-                        local d = playerData[player.UserId]
-                        if not d or d.tycoonSlot ~= slotId then
-                            notify(player, "This is not your tycoon!", Color3.fromRGB(255,80,80))
-                            return
+                        local d=playerData[player.UserId]
+                        if not d or d.tycoonSlot~=slotId then
+                            notify(player,"This is not your tycoon!",Color3.fromRGB(255,80,80)); return
                         end
-                        -- If floor locked, try to unlock it
                         if not d.floorsUnlocked[floor] then
-                            local ok, msg = unlockFloor(player, floor)
-                            if not ok then notify(player, msg, Color3.fromRGB(255,80,80)) end
+                            local ok,msg=unlockFloor(player,floor)
+                            if not ok then notify(player,msg,Color3.fromRGB(255,80,80)) end
                             return
                         end
-                        local ok, msg = upgradeDropper(player, floor, di)
-                        if not ok then notify(player, msg, Color3.fromRGB(255,80,80)) end
+                        local ok,msg=upgradeDropper(player,floor,di)
+                        if not ok then notify(player,msg,Color3.fromRGB(255,80,80)) end
                     end)
 
                 elseif parent:GetAttribute("IsWeaponBtn") then
-                    local slotId = parent:GetAttribute("TycoonId")
-                    local floor  = parent:GetAttribute("FloorId")
-                    local wi     = parent:GetAttribute("WeaponId")
+                    local slotId=parent:GetAttribute("TycoonId")
+                    local floor =parent:GetAttribute("FloorId")
+                    local wi    =parent:GetAttribute("WeaponId")
                     desc.Triggered:Connect(function(player)
-                        local d = playerData[player.UserId]
-                        if not d or d.tycoonSlot ~= slotId then
-                            notify(player, "This is not your tycoon!", Color3.fromRGB(255,80,80))
-                            return
+                        local d=playerData[player.UserId]
+                        if not d or d.tycoonSlot~=slotId then
+                            notify(player,"This is not your tycoon!",Color3.fromRGB(255,80,80)); return
                         end
                         if d.weaponsOwned[floor] and d.weaponsOwned[floor][wi] then
-                            equipWeapon(player, floor, wi)
-                            notify(player, GC.WEAPONS[floor][wi].name .. " equipped!", Color3.fromRGB(80,180,255))
+                            equipWeapon(player,floor,wi)
+                            notify(player,GC.WEAPONS[floor][wi].name.." equipped!",Color3.fromRGB(80,180,255))
                         else
-                            local ok, msg = buyWeapon(player, floor, wi)
-                            if ok then
-                                equipWeapon(player, floor, wi)
-                            else
-                                notify(player, msg or "Cannot buy", Color3.fromRGB(255,80,80))
-                            end
+                            local ok,msg=buyWeapon(player,floor,wi)
+                            if ok then equipWeapon(player,floor,wi)
+                            else notify(player,msg or "Cannot buy",Color3.fromRGB(255,80,80)) end
                         end
                     end)
 
                 elseif parent:GetAttribute("IsElevUp") then
-                    local slotId  = parent:GetAttribute("TycoonId")
-                    local floorId = parent:GetAttribute("FloorId")
+                    local slotId =parent:GetAttribute("TycoonId")
+                    local floorId=parent:GetAttribute("FloorId")
                     desc.Triggered:Connect(function(plr)
-                        local d = playerData[plr.UserId]
-                        if not d or d.tycoonSlot ~= slotId then
-                            notify(plr, "This is not your tycoon!", Color3.fromRGB(255,80,80))
-                            return
+                        local d=playerData[plr.UserId]
+                        if not d or d.tycoonSlot~=slotId then
+                            notify(plr,"This is not your tycoon!",Color3.fromRGB(255,80,80)); return
                         end
-                        local nextFloor = floorId + 1
-                        if nextFloor > 4 then return end
+                        local nextFloor=floorId+1
+                        if nextFloor>4 then return end
                         if not d.floorsUnlocked[nextFloor] then
-                            local ok, msg = unlockFloor(plr, nextFloor)
-                            if not ok then
-                                notify(plr, msg or "Cannot unlock floor", Color3.fromRGB(255,80,80))
-                            end
+                            local ok,msg=unlockFloor(plr,nextFloor)
+                            if not ok then notify(plr,msg or "Cannot unlock floor",Color3.fromRGB(255,80,80)) end
                             return
                         end
-                        local t   = getTycoonFolder(slotId)
-                        local pad = t and t:FindFirstChild("Pad")
+                        local tf=getTycoonFolder(slotId)
+                        local pad=tf and tf:FindFirstChild("Pad")
                         if not pad then return end
-                        local baseYs = {2, 18, 36, 58}
-                        local root = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-                        if root then
-                            root.CFrame = pad.CFrame * CFrame.new(0, baseYs[nextFloor] + 5, 10)
-                        end
+                        local baseYs={2,18,36,58}
+                        local root=plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                        if root then root.CFrame=pad.CFrame*CFrame.new(0,baseYs[nextFloor]+5,10) end
                     end)
 
                 elseif parent:GetAttribute("IsElevDn") then
-                    local slotId  = parent:GetAttribute("TycoonId")
-                    local floorId = parent:GetAttribute("FloorId")
+                    local slotId =parent:GetAttribute("TycoonId")
+                    local floorId=parent:GetAttribute("FloorId")
                     desc.Triggered:Connect(function(plr)
-                        local d = playerData[plr.UserId]
-                        if not d or d.tycoonSlot ~= slotId then
-                            notify(plr, "This is not your tycoon!", Color3.fromRGB(255,80,80))
-                            return
+                        local d=playerData[plr.UserId]
+                        if not d or d.tycoonSlot~=slotId then
+                            notify(plr,"This is not your tycoon!",Color3.fromRGB(255,80,80)); return
                         end
-                        local prevFloor = floorId - 1
-                        if prevFloor < 1 then return end
-                        local t   = getTycoonFolder(slotId)
-                        local pad = t and t:FindFirstChild("Pad")
+                        local prevFloor=floorId-1
+                        if prevFloor<1 then return end
+                        local tf=getTycoonFolder(slotId)
+                        local pad=tf and tf:FindFirstChild("Pad")
                         if not pad then return end
-                        local baseYs = {2, 18, 36, 58}
-                        local root = plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
-                        if root then
-                            root.CFrame = pad.CFrame * CFrame.new(0, baseYs[prevFloor] + 5, 10)
-                        end
+                        local baseYs={2,18,36,58}
+                        local root=plr.Character and plr.Character:FindFirstChild("HumanoidRootPart")
+                        if root then root.CFrame=pad.CFrame*CFrame.new(0,baseYs[prevFloor]+5,10) end
                     end)
                 end
             end
         end
     end
 
-    -- Owner room keypad
-    local ownerRoom = Workspace:FindFirstChild("OwnerRoom")
+    -- Owner room
+    local ownerRoom=Workspace:FindFirstChild("OwnerRoom")
     if ownerRoom then
-        local keypad = ownerRoom:FindFirstChild("OwnerKeypad")
+        local keypad=ownerRoom:FindFirstChild("OwnerKeypad")
         if keypad then
-            local kpp = keypad:FindFirstChildOfClass("ProximityPrompt")
+            local kpp=keypad:FindFirstChildOfClass("ProximityPrompt")
             if kpp then
                 kpp.Triggered:Connect(function(player)
-                    if player.UserId ~= OWNER_ID then
-                        notify(player, "Access denied.", Color3.fromRGB(255,60,60))
-                        return
-                    end
-                    local char = player.Character
-                    local root = char and char:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        -- Teleport inside the owner room (south exterior)
-                        local hx = 320; local hz = 320; local wT = 12
-                        root.CFrame = CFrame.new(0, 10, hz + wT + 10)
-                    end
+                    if player.UserId~=OWNER_ID then notify(player,"Access denied.",Color3.fromRGB(255,60,60)); return end
+                    local char=player.Character; local root=char and char:FindFirstChild("HumanoidRootPart")
+                    if root then root.CFrame=CFrame.new(0,10,320+12+10) end
                 end)
             end
         end
-        local exitPad = ownerRoom:FindFirstChild("OwnerExitPad")
+        local exitPad=ownerRoom:FindFirstChild("OwnerExitPad")
         if exitPad then
-            local epp = exitPad:FindFirstChildOfClass("ProximityPrompt")
+            local epp=exitPad:FindFirstChildOfClass("ProximityPrompt")
             if epp then
                 epp.Triggered:Connect(function(player)
-                    if player.UserId ~= OWNER_ID then return end
-                    local char = player.Character
-                    local root = char and char:FindFirstChild("HumanoidRootPart")
-                    if root then
-                        root.CFrame = CFrame.new(0, 5, 260)  -- back onto the platform
-                    end
+                    if player.UserId~=OWNER_ID then return end
+                    local char=player.Character; local root=char and char:FindFirstChild("HumanoidRootPart")
+                    if root then root.CFrame=CFrame.new(0,5,260) end
                 end)
             end
         end
     end
 
-    -- VIP pad
-    local vipZone = Workspace:FindFirstChild("VIPZone")
+    -- VIP
+    local vipZone=Workspace:FindFirstChild("VIPZone")
     if vipZone then
-        local vPad = vipZone:FindFirstChild("VIPPurchasePad")
+        local vPad=vipZone:FindFirstChild("VIPPurchasePad")
         if vPad then
-            local pp = vPad:FindFirstChildOfClass("ProximityPrompt")
+            local pp=vPad:FindFirstChildOfClass("ProximityPrompt")
             if pp then
                 pp.Triggered:Connect(function(player)
-                    if hasPass(player, GC.PASSES.vip) then
-                        notify(player, "You already have VIP! Enjoy the lounge.", Theme.VIP.glowColor)
+                    if hasPass(player,GC.PASSES.vip) then
+                        notify(player,"You already have VIP! Enjoy the lounge.",Theme.VIP.glowColor)
                     else
-                        MarketplaceService:PromptGamePassPurchase(player, GC.PASSES.vip)
+                        MarketplaceService:PromptGamePassPurchase(player,GC.PASSES.vip)
                     end
                 end)
             end
         end
-        -- VIP gate: block non-VIPs
-        local gate = vipZone:FindFirstChild("VIPGate")
+        local gate=vipZone:FindFirstChild("VIPGate")
         if gate then
             gate.Touched:Connect(function(hit)
-                local char = hit.Parent
-                local player = Players:GetPlayerFromCharacter(char)
+                local char=hit.Parent; local player=Players:GetPlayerFromCharacter(char)
                 if not player then return end
-                if not hasPass(player, GC.PASSES.vip) then
+                if not hasPass(player,GC.PASSES.vip) then
                     RE.VIPPrompt:FireClient(player)
-                    -- Push them back
-                    local root = char:FindFirstChild("HumanoidRootPart")
+                    local root=char:FindFirstChild("HumanoidRootPart")
                     if root then
-                        local away = (root.Position - gate.Position).Unit
-                        root.CFrame = root.CFrame + away * 8
+                        local away=(root.Position-gate.Position).Unit
+                        root.CFrame=root.CFrame+away*8
                     end
                 end
             end)
@@ -915,94 +898,75 @@ end)
 -- ============================================================
 
 RE.PrestigeRequest.OnServerEvent:Connect(function(player)
-    local ok, msg = prestige(player)
-    if not ok and msg then notify(player, msg, Color3.fromRGB(255,80,80)) end
+    local ok,msg=prestige(player)
+    if not ok and msg then notify(player,msg,Color3.fromRGB(255,80,80)) end
 end)
 
-RE.EquipWeaponRequest.OnServerEvent:Connect(function(player, floor, wi)
-    floor = tonumber(floor); wi = tonumber(wi)
+RE.EquipWeaponRequest.OnServerEvent:Connect(function(player,floor,wi)
+    floor=tonumber(floor); wi=tonumber(wi)
     if not floor or not wi then return end
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d or not d.tycoonSlot then return end
     if not GC.WEAPONS[floor] or not GC.WEAPONS[floor][wi] then return end
     if not d.floorsUnlocked[floor] then
-        notify(player, "Unlock floor " .. floor .. " first!", Color3.fromRGB(255,80,80))
-        return
+        notify(player,"Unlock floor "..floor.." first!",Color3.fromRGB(255,80,80)); return
     end
     if not (d.weaponsOwned[floor] and d.weaponsOwned[floor][wi]) then
-        local ok, msg = buyWeapon(player, floor, wi)
-        if not ok then
-            notify(player, msg or "Cannot purchase", Color3.fromRGB(255,80,80))
-            return
-        end
+        local ok,msg=buyWeapon(player,floor,wi)
+        if not ok then notify(player,msg or "Cannot purchase",Color3.fromRGB(255,80,80)); return end
     end
-    equipWeapon(player, floor, wi)
+    equipWeapon(player,floor,wi)
 end)
 
-RF.GetTycoonData.OnServerInvoke = function(player)
-    local d = playerData[player.UserId]
-    return d and {
-        slot   = d.tycoonSlot,
-        floors = d.floorsUnlocked,
-        droppers = d.dropperLevels,
-        weapons  = d.weaponsOwned,
-    } or nil
+RF.GetTycoonData.OnServerInvoke=function(player)
+    local d=playerData[player.UserId]
+    return d and {slot=d.tycoonSlot,floors=d.floorsUnlocked,droppers=d.dropperLevels,weapons=d.weaponsOwned} or nil
 end
 
 -- ============================================================
--- Marketplace callbacks
+-- Marketplace
 -- ============================================================
 
-MarketplaceService.ProcessReceipt = function(info)
-    local player = Players:GetPlayerByUserId(info.PlayerId)
+MarketplaceService.ProcessReceipt=function(info)
+    local player=Players:GetPlayerByUserId(info.PlayerId)
     if not player then return Enum.ProductPurchaseDecision.NotProcessedYet end
-    local d = playerData[info.PlayerId]
+    local d=playerData[info.PlayerId]
     if not d then return Enum.ProductPurchaseDecision.NotProcessedYet end
-
-    for _, pack in ipairs(GC.COIN_PACKS) do
-        if info.ProductId == pack.id then
-            d.coins = d.coins + pack.coins
-            d.totalEarned = d.totalEarned + pack.coins
-            notify(player, "+" .. formatCoins(pack.coins) .. " coins added!", Color3.fromRGB(255,215,0), 5)
-            sendStats(player)
-            dirtyPlayers[info.PlayerId] = true
+    for _,pack in ipairs(GC.COIN_PACKS) do
+        if info.ProductId==pack.id then
+            d.coins=d.coins+pack.coins; d.totalEarned=d.totalEarned+pack.coins
+            notify(player,"+"..formatCoins(pack.coins).." coins added!",Color3.fromRGB(255,215,0),5)
+            sendStats(player); dirtyPlayers[info.PlayerId]=true
             return Enum.ProductPurchaseDecision.PurchaseGranted
         end
     end
-
-    if info.ProductId == GC.RESET_PRODUCT_ID then
-        -- Refund 40% of upgrade costs, reset all droppers
-        local refund = 0
-        for floor = 1, 4 do
-            local dlist = GC.DROPPERS[floor]
-            for di, dd in ipairs(dlist) do
-                local lv = (d.dropperLevels[floor] or {})[di] or 0
-                for lvl = 1, lv do
-                    refund = refund + math.floor(dd.baseCost * (dd.costMult ^ (lvl-1)) * 0.4)
-                end
+    if info.ProductId==GC.RESET_PRODUCT_ID then
+        local refund=0
+        for floor=1,4 do
+            local dlist=GC.DROPPERS[floor]
+            for di,dd in ipairs(dlist) do
+                local lv=(d.dropperLevels[floor] or {})[di] or 0
+                for lvl=1,lv do refund=refund+math.floor(dd.baseCost*(dd.costMult^(lvl-1))*0.4) end
             end
         end
-        d.dropperLevels = { {1,0,0,0}, {0,0,0}, {0,0,0}, {0,0,0} }
-        d.coins = d.coins + refund
+        d.dropperLevels={{1,0,0,0},{0,0,0},{0,0,0},{0,0,0}}
+        d.coins=d.coins+refund
         if d.tycoonSlot then updateTycoonForPlayer(player) end
-        notify(player, "Droppers reset! +" .. formatCoins(refund) .. " coins refunded.", Color3.fromRGB(200,150,255), 5)
-        sendStats(player)
-        dirtyPlayers[info.PlayerId] = true
+        notify(player,"Droppers reset! +"..formatCoins(refund).." coins refunded.",Color3.fromRGB(200,150,255),5)
+        sendStats(player); dirtyPlayers[info.PlayerId]=true
         return Enum.ProductPurchaseDecision.PurchaseGranted
     end
-
     return Enum.ProductPurchaseDecision.NotProcessedYet
 end
 
-MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, passId, wasPurchased)
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player,passId,wasPurchased)
     if not wasPurchased then return end
-    local d = playerData[player.UserId]
+    local d=playerData[player.UserId]
     if not d then return end
-    if not d._gp then d._gp = {} end
-    d._gp[passId] = true
-    refreshPasses(player)
-    sendStats(player)
-    notify(player, "Gamepass activated! Enjoy your perks.", Color3.fromRGB(255,215,0), 5)
+    if not d._gp then d._gp={} end
+    d._gp[passId]=true
+    refreshPasses(player); sendStats(player)
+    notify(player,"Gamepass activated! Enjoy your perks.",Color3.fromRGB(255,215,0),5)
 end)
 
 -- ============================================================
@@ -1010,56 +974,43 @@ end)
 -- ============================================================
 
 Players.PlayerAdded:Connect(function(player)
-    local data = loadData(player)
-    playerData[player.UserId] = data
-    playerHP[player.UserId]   = GC.PLAYER_MAX_HP
-    task.spawn(refreshPasses, player)
-
+    local data=loadData(player)
+    playerData[player.UserId]=data
+    playerHP[player.UserId]=GC.PLAYER_MAX_HP
+    task.spawn(refreshPasses,player)
     player.CharacterAdded:Connect(function(char)
-        local hum = char:WaitForChild("Humanoid", 8)
-        if hum then
-            hum.MaxHealth = GC.PLAYER_MAX_HP
-            hum.Health    = GC.PLAYER_MAX_HP
+        local hum=char:WaitForChild("Humanoid",8)
+        if hum then hum.MaxHealth=GC.PLAYER_MAX_HP; hum.Health=GC.PLAYER_MAX_HP end
+        if hasPass(player,GC.PASSES.speedDemon) then
+            if hum then hum.WalkSpeed=32+16 end
         end
-        if hasPass(player, GC.PASSES.speedDemon) then
-            if hum then hum.WalkSpeed = 32 + 16 end
-        end
-        task.wait(1)
-        sendStats(player)
-        if data.tycoonSlot then
-            updateTycoonForPlayer(player)
-        end
+        task.wait(1); sendStats(player)
+        if data.tycoonSlot then updateTycoonForPlayer(player) end
     end)
-
-    task.wait(3)
-    sendStats(player)
+    task.wait(3); sendStats(player)
 end)
 
 Players.PlayerRemoving:Connect(function(player)
-    releaseTycoon(player)
-    saveData(player)
-    playerData[player.UserId] = nil
-    playerHP[player.UserId]   = nil
+    releaseTycoon(player); saveData(player)
+    playerData[player.UserId]=nil; playerHP[player.UserId]=nil
 end)
 
 -- ============================================================
--- Auto-save loop
+-- Auto-save
 -- ============================================================
 
 task.spawn(function()
     while true do
         task.wait(GC.SAVE_INTERVAL)
-        for uid, _ in pairs(dirtyPlayers) do
-            local player = Players:GetPlayerByUserId(uid)
+        for uid,_ in pairs(dirtyPlayers) do
+            local player=Players:GetPlayerByUserId(uid)
             if player then saveData(player) end
         end
     end
 end)
 
 game:BindToClose(function()
-    for _, player in ipairs(Players:GetPlayers()) do
-        saveData(player)
-    end
+    for _,player in ipairs(Players:GetPlayers()) do saveData(player) end
 end)
 
-print("[MainGameServer] GunTycoon server ready")
+print("[MainGameServer] GunTycoon v3 server ready")
