@@ -1,41 +1,25 @@
--- GamepassEnforcer.server.lua
--- Sends purchase confirmation toasts and refreshes the GP cache when a
--- player buys a pass mid-session. Perk application (speed, auto-farm, etc.)
--- is handled entirely by MainGameServer via its own checkGamepasses().
+-- GunTycoon GamepassEnforcer v1
+-- Fires confirmation notifications when a gamepass is purchased mid-session
+-- MainGameServer handles the actual perk application via refreshPasses()
 
-local Players            = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
-local ReplicatedStorage  = game:GetService("ReplicatedStorage")
+local RS                 = game:GetService("ReplicatedStorage")
 
-local GP = {
-	VIP           = 1821720069,
-	AUTO_FARM     = 1823064828,
-	AUTO_COLLECT  = 1822515059,
-	PRESTIGE_BOOST= 1822649609,
-	LUCKY_CHARM   = 1821659972,
-	SPEED_DEMON   = 1822655551,
-}
-
-local NOTIFICATIONS = {
-	[GP.VIP]           = {"⭐ VIP ACTIVATED!",     "2× coins on everything!",              "gold" },
-	[GP.AUTO_FARM]     = {"🤖 Auto Farm ON!",       "Your machines tick at 2× speed!",      "green"},
-	[GP.AUTO_COLLECT]  = {"💰 Auto Collect ON!",    "Geyser coins fly straight to you!",    "green"},
-	[GP.PRESTIGE_BOOST]= {"🔥 Prestige Boost ON!",  "Rebirth costs 20% less every run!",    "gold" },
-	[GP.LUCKY_CHARM]   = {"🍀 Lucky Charm ON!",     "3× jackpot chance + 20× multiplier!",  "green"},
-	[GP.SPEED_DEMON]   = {"⚡ Speed Demon ON!",     "You're now faster than everyone else!", "blue" },
+local MESSAGES = {
+    [1821720069] = "VIP activated! 2x income, VIP lounge access, and golden crown are yours.",
+    [1823064828] = "Auto Farm activated! Full income even when away from your tycoon.",
+    [1822515059] = "Auto Collect activated! Dropper income auto-collected every few seconds.",
+    [1822649609] = "Prestige Boost activated! Prestige costs reduced by 20%.",
+    [1821659972] = "Lucky Charm activated! 6% chance for 8x income jackpot each tick.",
+    [1822655551] = "Speed Demon activated! You are now 50% faster.",
 }
 
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, gpId, purchased)
-	if not purchased then return end
-	if not player or not player.Parent then return end
-
-	local notify = ReplicatedStorage:FindFirstChild("NotifyPlayer")
-	if not notify then return end
-
-	local n = NOTIFICATIONS[gpId]
-	if n then
-		notify:FireClient(player, n[1], n[2], n[3])
-	end
+    if not purchased then return end
+    local notify = RS:FindFirstChild("Notify")
+    if not notify then return end
+    local msg = MESSAGES[gpId] or "Gamepass activated!"
+    notify:FireClient(player, msg, Color3.fromRGB(255,215,0), 5)
 end)
 
-print("[MoneyIsland] ✅ Gamepass enforcer loaded!")
+print("[GamepassEnforcer] GunTycoon pass enforcer ready")

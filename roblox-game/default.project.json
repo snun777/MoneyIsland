@@ -1,11 +1,10 @@
 {
-  "name": "MoneyIsland",
+  "name": "GunTycoon",
   "tree": {
     "$className": "DataModel",
 
     "ServerScriptService": {
       "$className": "ServerScriptService",
-
       "MainGameServer": {
         "$path": "ServerScriptService/MainGameServer.server.lua"
       },
@@ -27,7 +26,7 @@
         "ClientUI": {
           "$path": "StarterPlayerScripts/ClientUI.client.lua"
         },
-        "CoinSpin": {
+        "WeaponHandler": {
           "$path": "StarterPlayerScripts/CoinSpin.client.lua"
         }
       }

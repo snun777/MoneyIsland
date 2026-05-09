@@ -1,1321 +1,608 @@
--- MapBuilder.server.lua (v26 - 20 unique machines + night skybox + CoinRain/GeyserSurge events)
+-- GunTycoon MapBuilder v3 - Iron Arsenal
+-- Progressive building: floors only appear when purchased
+-- Center VIP platform, elevator navigation, clean weapon/dropper layout
 
-local Workspace         = game:GetService("Workspace")
-local Players           = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local Lighting          = game:GetService("Lighting")
-
--- MainGameServer creates these first; we wait for them
-local coinBE       = ReplicatedStorage:WaitForChild("CoinCollected_BE", 15)
-local CoinRainBE   = ReplicatedStorage:WaitForChild("CoinRain_BE",      30)
-local GeyserSurgeBE= ReplicatedStorage:WaitForChild("GeyserSurge_BE",   30)
-
--- We create these; MainGameServer waits for them
-local CoinDestroyBE    = Instance.new("BindableEvent", ReplicatedStorage); CoinDestroyBE.Name    = "CoinDestroy_BE"
-local GeyserActivateBE = Instance.new("BindableEvent", ReplicatedStorage); GeyserActivateBE.Name = "GeyserActivate_BE"
-local PlotRelockBE     = Instance.new("BindableEvent", ReplicatedStorage); PlotRelockBE.Name     = "PlotRelock_BE"
-local MegaBurstBE      = Instance.new("BindableEvent", ReplicatedStorage); MegaBurstBE.Name      = "MegaBurst_BE"
--- RemoteEvent: broadcasts geyser on/off state + mega burst alerts to all clients
-local GeyserStateRE    = Instance.new("RemoteEvent",   ReplicatedStorage); GeyserStateRE.Name    = "GeyserState"
-local PlotPurchaseBE   = Instance.new("BindableEvent", ReplicatedStorage); PlotPurchaseBE.Name   = "PlotPurchase"
-local plotUnlockedBE   = Instance.new("BindableEvent", ReplicatedStorage); plotUnlockedBE.Name   = "PlotUnlocked"
-local PrestigeResetBE  = Instance.new("BindableEvent", ReplicatedStorage); PrestigeResetBE.Name  = "PrestigeReset_BE"
-local PlotTransferBE   = Instance.new("BindableEvent", ReplicatedStorage); PlotTransferBE.Name   = "PlotTransfer_BE"
-local PlotRaidAlertBE  = Instance.new("BindableEvent", ReplicatedStorage); PlotRaidAlertBE.Name  = "PlotRaidAlert_BE"
-
-for _, obj in ipairs(Workspace:GetChildren()) do
-	if obj.Name == "Baseplate" or obj.Name == "SpawnLocation" then obj:Destroy() end
-end
-
-local terrain = Workspace.Terrain; terrain:Clear()
-terrain:FillBlock(CFrame.new(0, -8,  0), Vector3.new(600, 16,  600),  Enum.Material.Pavement)
-terrain:FillBlock(CFrame.new(0, -18, 0), Vector3.new(598, 14,  598),  Enum.Material.Ground)
-terrain:FillBlock(CFrame.new(0, -20, 0), Vector3.new(1200, 18, 1200), Enum.Material.Water)
-
-local G   = 0
-local MAP = Instance.new("Folder", Workspace); MAP.Name = "MoneyIslandMap"
-
--- ── PART HELPERS ─────────────────────────────────────────────
-local function P(t)
-	local p = Instance.new("Part"); p.Anchored = true; p.CanCollide = t.cc ~= false
-	p.Size   = t.sz  or Vector3.new(4,1,4)
-	p.CFrame = t.cf  or CFrame.new(t.pos or Vector3.new())
-	p.Color  = t.col or Color3.fromRGB(163,162,165)
-	p.Material = t.mat or Enum.Material.SmoothPlastic
-	p.Name = t.name or "Part"; p.Transparency = t.tr or 0
-	p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
-	p.CastShadow = t.shadow ~= false
-	p.Parent = t.par or MAP; return p
-end
-
-local function CYL(t)
-	local p = Instance.new("Part"); p.Shape = Enum.PartType.Cylinder
-	p.Anchored = true; p.CanCollide = t.cc ~= false
-	p.Size   = t.sz  or Vector3.new(1,4,4)
-	p.CFrame = t.cf  or CFrame.new(t.pos or Vector3.new())
-	p.Color  = t.col or Color3.fromRGB(200,200,200)
-	p.Material = t.mat or Enum.Material.SmoothPlastic
-	p.Name = t.name or "Cyl"; p.Transparency = t.tr or 0
-	p.TopSurface = Enum.SurfaceType.Smooth; p.BottomSurface = Enum.SurfaceType.Smooth
-	p.Parent = t.par or MAP; return p
-end
-
-local function addLight(par, brightness, range, col)
-	local l = Instance.new("PointLight", par)
-	l.Brightness = brightness; l.Range = range; l.Color = col
-	return l
-end
-
-local function makeBillboard(par, txt, col, dy, w, h, maxDist)
-	local bb = Instance.new("BillboardGui", par)
-	bb.Size = UDim2.new(0, w or 200, 0, h or 50)
-	bb.StudsOffset = Vector3.new(0, dy or 3, 0); bb.MaxDistance = maxDist or 80
-	bb.AlwaysOnTop = false; bb.LightInfluence = 0
-	local tl = Instance.new("TextLabel", bb); tl.Size = UDim2.new(1,0,1,0)
-	tl.BackgroundTransparency = 1; tl.Text = txt; tl.TextColor3 = col or Color3.new(1,1,1)
-	tl.Font = Enum.Font.GothamBold; tl.TextScaled = true
-	tl.TextStrokeTransparency = 0.3; tl.TextStrokeColor3 = Color3.new(0,0,0)
-	return bb
-end
-
--- ── SPAWN PLATFORM ────────────────────────────────────────────
-local sp = Instance.new("SpawnLocation")
-sp.Size = Vector3.new(10,0.5,10); sp.CFrame = CFrame.new(0, G+0.25, 0)
-sp.Neutral = true; sp.Duration = 0; sp.Anchored = true
-sp.BrickColor = BrickColor.new("Cyan"); sp.Material = Enum.Material.Neon
-sp.TopSurface = Enum.SurfaceType.Smooth; sp.Parent = MAP
-
-local SPAWN_RING_N = 20
-for i = 0, SPAWN_RING_N-1 do
-	local a = i * (2*math.pi / SPAWN_RING_N)
-	P({name="SpawnRing", par=MAP, sz=Vector3.new(1.2,0.4,1.2),
-		pos=Vector3.new(math.cos(a)*7.5, G+0.5, math.sin(a)*7.5),
-		col=Color3.fromRGB(0,220,255), mat=Enum.Material.Neon, cc=false, shadow=false})
-end
-
--- ── LAYOUT CONSTANTS ──────────────────────────────────────────
-local DECK_TOP     = G + 0.6
-local PLOT_W       = 50
-local PLOT_D       = 50
-local COLS = {-2*PLOT_W, -PLOT_W, 0, PLOT_W, 2*PLOT_W}
-local ROWS = {-2*PLOT_D, -PLOT_D, 0, PLOT_D, 2*PLOT_D}
-local PC = Color3.fromRGB(188,140,80)
-local RC = Color3.fromRGB(160,110,55)
-local PM = Enum.Material.WoodPlanks
-
-local farmF  = Instance.new("Folder", MAP); farmF.Name  = "FarmZone"
-local coinsF = Instance.new("Folder", farmF); coinsF.Name = "CoinModels"
-local totalW = PLOT_W*5 + 10
-local totalD = PLOT_D*5 + 10
-
-P({name="Deck", par=farmF, sz=Vector3.new(totalW,0.6,totalD),
-	pos=Vector3.new(0,G+0.3,0), col=Color3.fromRGB(120,82,42), mat=PM})
-
--- ── FENCE BUILDERS ────────────────────────────────────────────
-local function fenceSection(f, x, z1, z2, vertical)
-	local len = math.abs(z2-z1); if len < 1 then return end
-	local cz  = (z1+z2)/2
-	if vertical then
-		P({par=f,name="Rail",sz=Vector3.new(0.5,0.8,len),pos=Vector3.new(x,DECK_TOP+1.5,cz),col=RC,mat=PM})
-		P({par=f,name="Rail",sz=Vector3.new(0.5,0.8,len),pos=Vector3.new(x,DECK_TOP+4.0,cz),col=RC,mat=PM})
-		local steps = math.max(1, math.floor(len/2.5))
-		for i = 0, steps do
-			P({par=f,name="Picket",sz=Vector3.new(0.4,6,0.8),
-				pos=Vector3.new(x,DECK_TOP+3.0,z1+i*(len/steps)),col=PC,mat=PM})
-		end
-	else
-		P({par=f,name="Rail",sz=Vector3.new(len,0.8,0.5),pos=Vector3.new(cz,DECK_TOP+1.5,x),col=RC,mat=PM})
-		P({par=f,name="Rail",sz=Vector3.new(len,0.8,0.5),pos=Vector3.new(cz,DECK_TOP+4.0,x),col=RC,mat=PM})
-		local steps = math.max(1, math.floor(len/2.5))
-		for i = 0, steps do
-			P({par=f,name="Picket",sz=Vector3.new(0.8,6,0.4),
-				pos=Vector3.new(z1+i*(len/steps),DECK_TOP+3.0,x),col=PC,mat=PM})
-		end
-	end
-end
-
-local function fencePost(f, x, z, h)
-	h = h or 7
-	P({par=f,name="Post",   sz=Vector3.new(1.4,h,1.4),  pos=Vector3.new(x,DECK_TOP+h/2,z),   col=Color3.fromRGB(140,90,40),mat=PM})
-	P({par=f,name="PostCap",sz=Vector3.new(1.6,0.6,1.6),pos=Vector3.new(x,DECK_TOP+h+0.3,z), col=Color3.fromRGB(120,75,30),mat=PM})
-end
-
--- Grid dividers
-for _, zd in ipairs({ROWS[1]+PLOT_D/2, ROWS[2]+PLOT_D/2, ROWS[3]+PLOT_D/2, ROWS[4]+PLOT_D/2}) do
-	P({name="DivZ",par=farmF,sz=Vector3.new(totalW,0.3,0.6),pos=Vector3.new(0,DECK_TOP+0.2,zd),col=Color3.fromRGB(60,40,14),mat=PM})
-end
-for _, xd in ipairs({COLS[1]+PLOT_W/2, COLS[2]+PLOT_W/2, COLS[3]+PLOT_W/2, COLS[4]+PLOT_W/2}) do
-	P({name="DivX",par=farmF,sz=Vector3.new(0.6,0.3,totalD),pos=Vector3.new(xd,DECK_TOP+0.2,0),col=Color3.fromRGB(60,40,14),mat=PM})
-end
-
-local BX = COLS[#COLS] + PLOT_W/2 - 1
-local BZ = ROWS[#ROWS] + PLOT_D/2 - 1
-fenceSection(farmF,-BX,-BZ,BZ,true);  fenceSection(farmF,BX,-BZ,BZ,true)
-fenceSection(farmF,-BZ,-BX,BX,false); fenceSection(farmF,BZ,-BX,BX,false)
-fencePost(farmF,-BX,-BZ); fencePost(farmF,-BX,BZ)
-fencePost(farmF, BX,-BZ); fencePost(farmF, BX,BZ)
-
--- ── LAMP POSTS ────────────────────────────────────────────────
-local lampF = Instance.new("Folder", MAP); lampF.Name = "Lamps"
-local function lampPost(cx, cz)
-	P({par=lampF,name="LampPost",sz=Vector3.new(0.9,11,0.9),
-		pos=Vector3.new(cx,G+5.5,cz),col=Color3.fromRGB(70,50,20),mat=PM,shadow=false})
-	P({par=lampF,name="LampArm",sz=Vector3.new(4,0.5,0.5),
-		pos=Vector3.new(cx+2,G+11.2,cz),col=Color3.fromRGB(60,40,15),mat=PM,shadow=false})
-	local globe = P({par=lampF,name="LampGlobe",sz=Vector3.new(2.4,2.4,2.4),
-		pos=Vector3.new(cx+2,G+10.2,cz),col=Color3.fromRGB(255,238,160),mat=Enum.Material.Neon,cc=false,shadow=false})
-	addLight(globe, 4, 35, Color3.fromRGB(255,230,140))
-end
-local lp = BX+10
-lampPost(lp,lp); lampPost(-lp,lp); lampPost(lp,-lp); lampPost(-lp,-lp)
-lampPost(lp,0);  lampPost(-lp,0);  lampPost(0,lp);   lampPost(0,-lp)
-
--- ── TREES ─────────────────────────────────────────────────────
-local treeF = Instance.new("Folder", MAP); treeF.Name = "Trees"
-local TREE_POSITIONS = {
-	{165,165},{-165,165},{165,-165},{-165,-165},
-	{-170,0},{0,170},{0,-170},
-	{210,100},{-210,100},{210,-100},{-210,-100},
-	{100,210},{-100,210},{100,-210},{-100,-210},
-}
-local function addTree(cx, cz, h)
-	h = h or 8
-	P({par=treeF,name="TreeTrunk",sz=Vector3.new(2.5,h,2.5),
-		pos=Vector3.new(cx,G+h/2-2,cz),col=Color3.fromRGB(85,52,18),mat=PM})
-	P({par=treeF,name="TreeCanopy",sz=Vector3.new(13,7,13),
-		pos=Vector3.new(cx,G+h+2,cz),col=Color3.fromRGB(30,148,52),mat=Enum.Material.SmoothPlastic,cc=false})
-	P({par=treeF,name="TreeTop",sz=Vector3.new(9,5,9),
-		pos=Vector3.new(cx,G+h+6.5,cz),col=Color3.fromRGB(20,128,42),mat=Enum.Material.SmoothPlastic,cc=false})
-end
-for i, tp in ipairs(TREE_POSITIONS) do addTree(tp[1], tp[2], 7+(i%3)) end
-
--- ── DECORATIVE ROCKS ──────────────────────────────────────────
-local rockF = Instance.new("Folder", MAP); rockF.Name = "Rocks"
-local ROCKS = {
-	{190,35,5,13,7},{-175,-30,4,11,6},{28,188,6,9,14},{-38,-172,3,12,8},
-	{162,160,7,8,8},{-163,145,4,10,7},{154,-160,5,7,10},{-158,-148,4,12,9},
-	{240,50,5,10,8},{-240,-60,4,9,7},{60,242,6,11,9},{-70,-238,3,8,6},
-}
-for _, r in ipairs(ROCKS) do
-	local rx,rz,rh,rw,rd = r[1],r[2],r[3],r[4],r[5]
-	P({par=rockF,name="Rock",sz=Vector3.new(rw,rh,rd),
-		pos=Vector3.new(rx,-11+rh/2-1,rz),col=Color3.fromRGB(88,83,78),mat=Enum.Material.SmoothPlastic})
-	if rh >= 5 then
-		P({par=rockF,name="RockCap",sz=Vector3.new(rw-3,1.5,rd-3),
-			pos=Vector3.new(rx,-11+rh-0.5,rz),col=Color3.fromRGB(72,68,64),mat=Enum.Material.SmoothPlastic})
-	end
-end
-
--- ── LEADERBOARD PLATFORM (right side of island, out of gameplay area) ────
-local lbF = Instance.new("Folder", MAP); lbF.Name = "LeaderboardArea"
--- Board faces left (toward spawn) from the right side
-local LB_X = 175; local LB_Z = 0
-local boardCF = CFrame.lookAt(Vector3.new(LB_X, G+14, LB_Z), Vector3.new(0, G+14, LB_Z))
--- Support pillars (tall so board is visible above fence)
-for _, dz in ipairs({-12, 12}) do
-	P({name="LBPillar",par=lbF,sz=Vector3.new(1.2,26,1.2),
-		pos=Vector3.new(LB_X, G+13, LB_Z+dz),col=Color3.fromRGB(70,50,20),mat=PM,shadow=false})
-end
--- Base platform
-P({name="LBPedestal",par=lbF,sz=Vector3.new(4,1,30),
-	pos=Vector3.new(LB_X, G+0.5, LB_Z),col=Color3.fromRGB(50,35,12),mat=PM})
--- Board face
-local lbBoard = P({name="LeaderboardBoard",par=lbF,sz=Vector3.new(22,14,0.8),
-	cf=boardCF,col=Color3.fromRGB(8,8,20),mat=Enum.Material.SmoothPlastic,shadow=false})
-addLight(lbBoard, 3, 28, Color3.fromRGB(255,215,0))
--- Neon frame edges
-local halfW, halfH = 11.3, 7.3
-for _, edge in ipairs({
-	{sz=Vector3.new(23.5,0.5,0.5), off=Vector3.new(0, halfH, 0)},
-	{sz=Vector3.new(23.5,0.5,0.5), off=Vector3.new(0,-halfH, 0)},
-	{sz=Vector3.new(0.5,15.5,0.5), off=Vector3.new( halfW,0,0)},
-	{sz=Vector3.new(0.5,15.5,0.5), off=Vector3.new(-halfW,0,0)},
-}) do
-	P({name="LBEdge",par=lbF,sz=edge.sz,cf=boardCF*CFrame.new(edge.off),
-		col=Color3.fromRGB(255,200,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-end
-
--- ── PLOT DEFINITIONS ──────────────────────────────────────────
--- contested=true: always open geyser zone, no ownership, no purchase
--- All other plots are owned per-player via auto-tick income
-local PLOT_DEFS = {
-	-- ── CONTESTED GEYSER ZONE (center cross, 5 plots) ──
-	{id="C_M",  cx=COLS[3], cz=ROWS[3], contested=true},
-	{id="L_M",  cx=COLS[2], cz=ROWS[3], contested=true},
-	{id="R_M",  cx=COLS[4], cz=ROWS[3], contested=true},
-	{id="C_N",  cx=COLS[3], cz=ROWS[4], contested=true},
-	{id="C_S",  cx=COLS[3], cz=ROWS[2], contested=true},
-	-- ── OWNED PLOTS ring 1 — inner, accessible from start (cost 5,000) ──
-	{id="L_N",  cx=COLS[2], cz=ROWS[4], cost=5000,    color=Color3.fromRGB(80,255,120), label="5,000 Coins"},
-	{id="R_N",  cx=COLS[4], cz=ROWS[4], cost=5000,    color=Color3.fromRGB(80,255,120), label="5,000 Coins"},
-	{id="L_S",  cx=COLS[2], cz=ROWS[2], cost=5000,    color=Color3.fromRGB(80,255,120), label="5,000 Coins"},
-	{id="R_S",  cx=COLS[4], cz=ROWS[2], cost=5000,    color=Color3.fromRGB(80,255,120), label="5,000 Coins"},
-	-- ── OWNED PLOTS ring 2 — mid ring, P1 territory (cost 50,000) ──
-	{id="LL_M", cx=COLS[1], cz=ROWS[3], cost=50000,   color=Color3.fromRGB(255,160,0),  label="50,000 Coins"},
-	{id="RR_M", cx=COLS[5], cz=ROWS[3], cost=50000,   color=Color3.fromRGB(255,160,0),  label="50,000 Coins"},
-	{id="C_NN", cx=COLS[3], cz=ROWS[5], cost=50000,   color=Color3.fromRGB(255,160,0),  label="50,000 Coins"},
-	{id="C_SS", cx=COLS[3], cz=ROWS[1], cost=50000,   color=Color3.fromRGB(255,160,0),  label="50,000 Coins"},
-	-- ── OWNED PLOTS ring 3 — outer, P2-3 territory (cost 300,000) ──
-	{id="LL_N", cx=COLS[1], cz=ROWS[4], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
-	{id="LL_S", cx=COLS[1], cz=ROWS[2], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
-	{id="RR_N", cx=COLS[5], cz=ROWS[4], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
-	{id="RR_S", cx=COLS[5], cz=ROWS[2], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
-	{id="L_NN", cx=COLS[2], cz=ROWS[5], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
-	{id="R_NN", cx=COLS[4], cz=ROWS[5], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
-	{id="L_SS", cx=COLS[2], cz=ROWS[1], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
-	{id="R_SS", cx=COLS[4], cz=ROWS[1], cost=300000,  color=Color3.fromRGB(255,200,0),  label="300,000 Coins"},
-	-- ── OWNED PLOTS ring 4 — corners, P4+ endgame (cost 1,500,000) ──
-	{id="LL_NN",cx=COLS[1], cz=ROWS[5], cost=1500000, color=Color3.fromRGB(220,80,255), label="1,500,000 Coins"},
-	{id="RR_NN",cx=COLS[5], cz=ROWS[5], cost=1500000, color=Color3.fromRGB(220,80,255), label="1,500,000 Coins"},
-	{id="LL_SS",cx=COLS[1], cz=ROWS[1], cost=1500000, color=Color3.fromRGB(220,80,255), label="1,500,000 Coins"},
-	{id="RR_SS",cx=COLS[5], cz=ROWS[1], cost=1500000, color=Color3.fromRGB(220,80,255), label="1,500,000 Coins"},
-}
-
--- Floor color tiers for owned plots (keyed by base plot cost)
-local TIER_FLOORS = {
-	[5000]    = Color3.fromRGB(108,75,38),   -- inner ring  — earthy green-brown
-	[50000]   = Color3.fromRGB(80,55,110),   -- mid ring    — deep purple
-	[300000]  = Color3.fromRGB(130,90,20),   -- outer ring  — gold
-	[1500000] = Color3.fromRGB(90,20,120),   -- corner ring — vivid purple
-}
-local function getFloorCol(cost) return TIER_FLOORS[cost] or Color3.fromRGB(120,84,44) end
-
-local plotState  = {}  -- plotState[plotId] = {unlocked, ownerUserId, folder, def, signBB}
-local plotByPos  = {}  -- plotByPos["cx_cz"] = state
-
--- ── NEIGHBOR HELPERS ──────────────────────────────────────────
-local function getNeighborKeys(def)
-	return {
-		(def.cx-PLOT_W).."_"..def.cz,
-		(def.cx+PLOT_W).."_"..def.cz,
-		def.cx.."_"..(def.cz-PLOT_D),
-		def.cx.."_"..(def.cz+PLOT_D),
-	}
-end
-
-local function hasUnlockedNeighbor(def)
-	for _, key in ipairs(getNeighborKeys(def)) do
-		local ns = plotByPos[key]
-		if ns and (ns.unlocked or ns.def.contested) then return true end
-	end
-	return false
-end
-
-local function revealNeighborSigns(def)
-	for _, key in ipairs(getNeighborKeys(def)) do
-		local ns = plotByPos[key]
-		if ns and not ns.unlocked and not ns.def.contested and ns.signBB then
-			ns.signBB.Enabled = true
-		end
-	end
-end
-
--- ── BUILD LOCKED OWNED PLOT ───────────────────────────────────
-local function buildLockedPlot(state)
-	local def    = state.def
-	local folder = state.folder
-	state.signBB = nil
-
-	local x1 = def.cx - PLOT_W/2 + 1; local x2 = def.cx + PLOT_W/2 - 1
-	local z1 = def.cz - PLOT_D/2 + 1; local z2 = def.cz + PLOT_D/2 - 1
-	local isOuterX1 = (def.cx == COLS[1]); local isOuterX2 = (def.cx == COLS[#COLS])
-	local isOuterZ1 = (def.cz == ROWS[1]); local isOuterZ2 = (def.cz == ROWS[#ROWS])
-
-	P({name="Overlay",par=folder,sz=Vector3.new(PLOT_W-1,0.15,PLOT_D-1),
-		pos=Vector3.new(def.cx,DECK_TOP+0.1,def.cz),
-		col=Color3.fromRGB(35,35,35),mat=Enum.Material.SmoothPlastic,tr=0.25,cc=false})
-
-	if not isOuterX1 then fenceSection(folder,x1,z1,z2,true) end
-	if not isOuterX2 then fenceSection(folder,x2,z1,z2,true) end
-	if not isOuterZ1 then fenceSection(folder,z1,x1,x2,false) end
-	if not isOuterZ2 then fenceSection(folder,z2,x1,x2,false) end
-	if not isOuterX1 and not isOuterZ1 then fencePost(folder,x1,z1) end
-	if not isOuterX1 and not isOuterZ2 then fencePost(folder,x1,z2) end
-	if not isOuterX2 and not isOuterZ1 then fencePost(folder,x2,z1) end
-	if not isOuterX2 and not isOuterZ2 then fencePost(folder,x2,z2) end
-
-	local signAnchor = Instance.new("Part")
-	signAnchor.Name = "SignAnchor"; signAnchor.Anchored = true; signAnchor.CanCollide = false
-	signAnchor.Size = Vector3.new(1,1,1); signAnchor.CFrame = CFrame.new(def.cx,DECK_TOP+5,def.cz)
-	signAnchor.Transparency = 1; signAnchor.Parent = folder
-
-	local scaledLabel = def.label or (def.cost.." Coins")
-	local signBB = makeBillboard(signAnchor, "🔒 "..scaledLabel.."\nClick to buy!", def.color, 5, 280, 80, 80)
-	signBB.Enabled = true  -- all plots visible from start; reach-based access only
-	state.signBB = signBB
-
-	local function addFaceAnchor(sz, cf)
-		local a = Instance.new("Part")
-		a.Name = "Anchor"; a.Anchored = true; a.CanCollide = true
-		a.Size = sz; a.CFrame = cf; a.Transparency = 1; a.Parent = folder
-		local cd = Instance.new("ClickDetector", a); cd.MaxActivationDistance = 60
-		cd.MouseClick:Connect(function(player)
-			if state.unlocked then return end
-			local rebirths = 0
-			local ls = player:FindFirstChild("leaderstats")
-			if ls then local rv = ls:FindFirstChild("Rebirths"); if rv then rebirths = rv.Value end end
-			local scaledCost = math.floor(def.cost * (1.5 ^ rebirths))
-			PlotPurchaseBE:Fire(player, def.id, scaledCost)
-		end)
-	end
-
-	if not isOuterX2 then addFaceAnchor(Vector3.new(1,10,PLOT_D-2), CFrame.new(x2,DECK_TOP+5,def.cz)) end
-	if not isOuterX1 then addFaceAnchor(Vector3.new(1,10,PLOT_D-2), CFrame.new(x1,DECK_TOP+5,def.cz)) end
-	if not isOuterZ2 then addFaceAnchor(Vector3.new(PLOT_W-2,10,1), CFrame.new(def.cx,DECK_TOP+5,z2)) end
-	if not isOuterZ1 then addFaceAnchor(Vector3.new(PLOT_W-2,10,1), CFrame.new(def.cx,DECK_TOP+5,z1)) end
-end
-
--- ── UNLOCK / RELOCK OWNED PLOTS ───────────────────────────────
-
--- ── COIN MACHINES ─────────────────────────────────────────────
-local function spinX(part, dps)
-	task.spawn(function()
-		while part and part.Parent do
-			part.CFrame = part.CFrame * CFrame.Angles(math.rad(dps), 0, 0)
-			task.wait(0.05)
-		end
-	end)
-end
-
-local function spinWorldY(part, cx, cy, cz, dps, extraAngles)
-	task.spawn(function()
-		local a = 0
-		while part and part.Parent do
-			a = a + dps
-			part.CFrame = CFrame.new(cx, cy, cz) * CFrame.Angles(0, math.rad(a), 0) * (extraAngles or CFrame.new())
-			task.wait(0.05)
-		end
-	end)
-end
-
-local function bob(part, cx, cy, cz, amp, sp, extraAngles)
-	task.spawn(function()
-		local t = 0
-		while part and part.Parent do
-			t = t + sp
-			part.CFrame = CFrame.new(cx, cy + math.sin(t)*amp, cz) * (extraAngles or CFrame.new())
-			task.wait(0.05)
-		end
-	end)
-end
-
--- Tier 2,000: 🖨️ Coin Printer
-local function buildPrinter(cx, cz, f)
-	local Y = DECK_TOP
-	local body = P({name="M",par=f,sz=Vector3.new(14,5,8),
-		pos=Vector3.new(cx,Y+2.7,cz),col=Color3.fromRGB(52,52,62),mat=PM})
-	P({name="M",par=f,sz=Vector3.new(14,5,0.4),
-		pos=Vector3.new(cx,Y+2.7,cz-4.2),col=Color3.fromRGB(72,72,86),mat=PM,cc=false,shadow=false})
-	local roller = CYL({name="M",par=f,sz=Vector3.new(13,1.4,1.4),
-		cf=CFrame.new(cx,Y+4.8,cz-4.0),col=Color3.fromRGB(28,28,32),mat=PM})
-	spinX(roller, 5)
-	P({name="M",par=f,sz=Vector3.new(9,0.3,0.5),
-		pos=Vector3.new(cx,Y+0.9,cz-4.6),col=Color3.fromRGB(255,215,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	P({name="M",par=f,sz=Vector3.new(8,0.25,2.5),
-		pos=Vector3.new(cx,Y+0.3,cz-5.8),col=Color3.fromRGB(155,130,22),mat=PM,cc=false,shadow=false})
-	for i=0,2 do
-		CYL({name="M",par=f,sz=Vector3.new(0.35,2.2,2.2),
-			cf=CFrame.new(cx-2+i*2, Y+0.55, cz-5.8)*CFrame.Angles(0,0,math.rad(90)),
-			col=Color3.fromRGB(255,215,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	end
-	P({name="M",par=f,sz=Vector3.new(5,3,0.3),
-		pos=Vector3.new(cx,Y+3.5,cz+4.2),col=Color3.fromRGB(30,160,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	P({name="M",par=f,sz=Vector3.new(0.9,0.9,0.9),
-		pos=Vector3.new(cx+5.5,Y+5.5,cz),col=Color3.fromRGB(0,255,100),mat=Enum.Material.Neon,cc=false,shadow=false})
-	addLight(body, 3, 22, Color3.fromRGB(255,215,0))
-	makeBillboard(body,"🖨️ COIN PRINTER",Color3.fromRGB(255,215,0),8,210,46,85)
-end
-
--- Tier 10,000: 🤖 Coin Roomba
-local function buildRoomba(cx, cz, f)
-	local Y = DECK_TOP
-	local discY = Y + 1.6
-	local discAngles = CFrame.Angles(0, 0, math.rad(90))
-	local body = CYL({name="M",par=f,sz=Vector3.new(3,16,16),
-		cf=CFrame.new(cx,discY,cz)*discAngles,
-		col=Color3.fromRGB(28,28,34),mat=PM})
-	CYL({name="M",par=f,sz=Vector3.new(3.1,17.4,17.4),
-		cf=CFrame.new(cx,discY,cz)*discAngles,
-		col=Color3.fromRGB(255,85,0),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.15})
-	P({name="M",par=f,sz=Vector3.new(5.5,2,5.5),
-		pos=Vector3.new(cx,discY+2.2,cz),col=Color3.fromRGB(44,44,56),mat=PM,cc=false,shadow=false})
-	for _, ex in ipairs({-2, 2}) do
-		P({name="M",par=f,sz=Vector3.new(1.2,1.2,0.6),
-			pos=Vector3.new(cx+ex, discY+1.5, cz-8.3),
-			col=Color3.fromRGB(255,220,50),mat=Enum.Material.Neon,cc=false,shadow=false})
-	end
-	CYL({name="M",par=f,sz=Vector3.new(0.6,3,3),
-		cf=CFrame.new(cx,discY+3.2,cz)*discAngles,
-		col=Color3.fromRGB(0,220,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	P({name="M",par=f,sz=Vector3.new(0.5,4.5,0.5),
-		pos=Vector3.new(cx,discY+4.5,cz),col=Color3.fromRGB(80,80,95),mat=PM,cc=false,shadow=false})
-	P({name="M",par=f,sz=Vector3.new(1.4,1.4,1.4),
-		pos=Vector3.new(cx,discY+7.0,cz),col=Color3.fromRGB(255,85,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	spinWorldY(body, cx, discY, cz, 1.0, discAngles)
-	addLight(body, 3.5, 26, Color3.fromRGB(255,120,0))
-	makeBillboard(body,"🤖 COIN ROOMBA",Color3.fromRGB(255,120,0),10,210,46,85)
-end
-
--- Tier 25,000: 🏭 Coin Factory
-local function buildFactory(cx, cz, f)
-	local Y = DECK_TOP
-	local body = P({name="M",par=f,sz=Vector3.new(16,9,13),
-		pos=Vector3.new(cx,Y+4.7,cz),col=Color3.fromRGB(55,53,65),mat=PM})
-	P({name="M",par=f,sz=Vector3.new(17.5,0.7,14.5),
-		pos=Vector3.new(cx,Y+9.4,cz),col=Color3.fromRGB(42,40,52),mat=PM,cc=false})
-	local upAngles = CFrame.Angles(0,0,math.rad(90))
-	CYL({name="M",par=f,sz=Vector3.new(11,3.5,3.5),
-		cf=CFrame.new(cx-4.5,Y+14.5,cz+2.5)*upAngles,col=Color3.fromRGB(62,60,72),mat=PM,cc=false})
-	CYL({name="M",par=f,sz=Vector3.new(8,2.8,2.8),
-		cf=CFrame.new(cx+4.0,Y+12.5,cz-2)*upAngles,col=Color3.fromRGB(62,60,72),mat=PM,cc=false})
-	CYL({name="M",par=f,sz=Vector3.new(0.8,3.7,3.7),
-		cf=CFrame.new(cx-4.5,Y+9.5,cz+2.5)*upAngles,
-		col=Color3.fromRGB(255,80,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	CYL({name="M",par=f,sz=Vector3.new(0.8,3.0,3.0),
-		cf=CFrame.new(cx+4.0,Y+9.0,cz-2)*upAngles,
-		col=Color3.fromRGB(255,80,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	local smoke1 = CYL({name="M",par=f,sz=Vector3.new(0.6,4.5,4.5),
-		cf=CFrame.new(cx-4.5,Y+20,cz+2.5)*upAngles,
-		col=Color3.fromRGB(200,200,210),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.4})
-	local smoke2 = CYL({name="M",par=f,sz=Vector3.new(0.6,3.5,3.5),
-		cf=CFrame.new(cx+4.0,Y+18,cz-2)*upAngles,
-		col=Color3.fromRGB(200,200,210),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.4})
-	bob(smoke1, cx-4.5, Y+20, cz+2.5, 1.5, 0.08, upAngles)
-	bob(smoke2, cx+4.0, Y+18, cz-2,   1.2, 0.12, upAngles)
-	for _, wpos in ipairs({{-5,7},{1,7},{-5,4},{1,4}}) do
-		P({name="M",par=f,sz=Vector3.new(3,2.5,0.3),
-			pos=Vector3.new(cx+wpos[1],Y+wpos[2],cz-6.6),
-			col=Color3.fromRGB(255,220,100),mat=Enum.Material.Neon,cc=false,shadow=false})
-	end
-	P({name="M",par=f,sz=Vector3.new(4,5,0.3),
-		pos=Vector3.new(cx+5,Y+2.6,cz-6.6),col=Color3.fromRGB(38,36,48),mat=PM,cc=false,shadow=false})
-	for i=0,3 do
-		P({name="M",par=f,sz=Vector3.new(7,0.2,0.5),
-			pos=Vector3.new(cx,Y+0.25,cz-7.5+i*0.6),
-			col=Color3.fromRGB(28,28,28),mat=PM,cc=false,shadow=false})
-	end
-	P({name="M",par=f,sz=Vector3.new(0.3,3,8),
-		pos=Vector3.new(cx+8.2,Y+7.5,cz),
-		col=Color3.fromRGB(255,200,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	addLight(body, 4, 34, Color3.fromRGB(255,190,60))
-	makeBillboard(body,"🏭 COIN FACTORY",Color3.fromRGB(255,190,60),26,220,46,90)
-end
-
--- Tier 50,000: 🏛️ Coin Vault
-local function buildVault(cx, cz, f)
-	local Y = DECK_TOP
-	P({name="M",par=f,sz=Vector3.new(18,1.2,18),
-		pos=Vector3.new(cx,Y+0.7,cz),col=Color3.fromRGB(44,38,54),mat=PM,cc=false})
-	local faceAngles = CFrame.Angles(0, math.rad(90), 0)
-	P({name="M",par=f,sz=Vector3.new(5,20,20),
-		pos=Vector3.new(cx,Y+11,cz-3),col=Color3.fromRGB(38,32,48),mat=PM})
-	local door = CYL({name="M",par=f,sz=Vector3.new(3.5,17,17),
-		cf=CFrame.new(cx,Y+11,cz-3)*faceAngles,
-		col=Color3.fromRGB(66,58,82),mat=PM})
-	CYL({name="M",par=f,sz=Vector3.new(0.8,19,19),
-		cf=CFrame.new(cx,Y+11,cz-3)*faceAngles,
-		col=Color3.fromRGB(200,60,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	local lock = CYL({name="M",par=f,sz=Vector3.new(2,6,6),
-		cf=CFrame.new(cx,Y+11,cz-5)*faceAngles,
-		col=Color3.fromRGB(200,180,30),mat=PM})
-	spinWorldY(lock, cx, Y+11, cz-5, 0.6, faceAngles)
-	P({name="M",par=f,sz=Vector3.new(0.5,0.5,4),
-		pos=Vector3.new(cx,Y+11,cz-5.5),col=Color3.fromRGB(40,40,50),mat=PM,cc=false,shadow=false})
-	P({name="M",par=f,sz=Vector3.new(4,0.5,0.5),
-		pos=Vector3.new(cx,Y+8.5,cz-4.5),col=Color3.fromRGB(200,180,30),mat=PM,cc=false,shadow=false})
-	for i=0,2 do
-		for j=0,1 do
-			P({name="M",par=f,sz=Vector3.new(3.5,1.2,5.5),
-				pos=Vector3.new(cx+5.5+j*0.2, Y+0.8+i*1.3, cz+(j-0.5)*2),
-				col=Color3.fromRGB(255,200,20),mat=PM,cc=false,shadow=false})
-		end
-	end
-	for i=0,3 do
-		local a = math.rad(i*90 + 45)
-		local orb = P({name="M",par=f,sz=Vector3.new(1.2,1.2,1.2),
-			pos=Vector3.new(cx+math.cos(a)*9, Y+11, cz+math.sin(a)*9),
-			col=Color3.fromRGB(200,60,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-		bob(orb, cx+math.cos(a)*9, Y+11, cz+math.sin(a)*9, 2.5, 0.06+i*0.015)
-	end
-	addLight(door, 5, 42, Color3.fromRGB(220,80,255))
-	makeBillboard(door,"🏛️ COIN VAULT",Color3.fromRGB(220,80,255),16,220,46,100)
-end
-
--- ── NEW UNIQUE MACHINE BUILDERS ──────────────────────────────
-
--- L_N: 🧲 Coin Magnet
-local function buildMagnet(cx, cz, f)
-	local Y = DECK_TOP
-	local base = P({name="M",par=f,sz=Vector3.new(13,2,7),pos=Vector3.new(cx,Y+1.2,cz),col=Color3.fromRGB(38,38,50),mat=PM})
-	P({name="M",par=f,sz=Vector3.new(4,11,5),pos=Vector3.new(cx-4,Y+7.5,cz),col=Color3.fromRGB(190,36,36),mat=PM})
-	P({name="M",par=f,sz=Vector3.new(14,4,5),pos=Vector3.new(cx,Y+13.8,cz),col=Color3.fromRGB(30,30,42),mat=PM})
-	P({name="M",par=f,sz=Vector3.new(4,11,5),pos=Vector3.new(cx+4,Y+7.5,cz),col=Color3.fromRGB(38,38,200),mat=PM})
-	P({name="M",par=f,sz=Vector3.new(4,2.5,5.5),pos=Vector3.new(cx-4,Y+12.3,cz),col=Color3.fromRGB(255,60,60),mat=Enum.Material.Neon,cc=false,shadow=false})
-	P({name="M",par=f,sz=Vector3.new(4,2.5,5.5),pos=Vector3.new(cx+4,Y+12.3,cz),col=Color3.fromRGB(60,80,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	local orbCoin = CYL({name="M",par=f,sz=Vector3.new(0.5,3.5,3.5),cf=CFrame.new(cx+10,Y+7,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,215,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	spinWorldY(orbCoin, cx, Y+7, cz, 3.5)
-	addLight(base, 3.5, 28, Color3.fromRGB(255,120,120))
-	makeBillboard(base,"🧲 COIN MAGNET",Color3.fromRGB(255,120,120),20,220,46,85)
-end
-
--- R_N: ⚗️ Alchemy Cauldron
-local function buildAlchemyCauldron(cx, cz, f)
-	local Y = DECK_TOP
-	for _, ox in ipairs({-4.5,0,4.5}) do
-		P({name="M",par=f,sz=Vector3.new(1.2,5,1.2),pos=Vector3.new(cx+ox,Y+2.5,cz),col=Color3.fromRGB(65,40,15),mat=PM})
-	end
-	local body = CYL({name="M",par=f,sz=Vector3.new(7,13,13),cf=CFrame.new(cx,Y+7.5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(40,32,22),mat=PM})
-	CYL({name="M",par=f,sz=Vector3.new(7.2,14.5,14.5),cf=CFrame.new(cx,Y+7.5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(90,62,24),mat=PM,cc=false,shadow=false,tr=0.6})
-	CYL({name="M",par=f,sz=Vector3.new(1.5,11,11),cf=CFrame.new(cx,Y+11.5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(0,200,80),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.3})
-	for i=0,2 do
-		local a = math.rad(i*120)
-		local orb = P({name="M",par=f,sz=Vector3.new(1.8,1.8,1.8),pos=Vector3.new(cx+math.cos(a)*7,Y+13,cz+math.sin(a)*7),col=Color3.fromRGB(160,0,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-		bob(orb,cx+math.cos(a)*7,Y+13,cz+math.sin(a)*7,1.8,0.07+i*0.03)
-	end
-	addLight(body,4,32,Color3.fromRGB(0,220,100))
-	makeBillboard(body,"⚗️ ALCHEMY CAULDRON",Color3.fromRGB(60,255,140),10,240,46,85)
-end
-
--- L_S: 🎰 Slot Machine
-local function buildSlotMachine(cx, cz, f)
-	local Y = DECK_TOP
-	local cab = P({name="M",par=f,sz=Vector3.new(14,16,9),pos=Vector3.new(cx,Y+8.2,cz),col=Color3.fromRGB(160,20,20),mat=PM})
-	P({name="M",par=f,sz=Vector3.new(13.5,0.8,9.5),pos=Vector3.new(cx,Y+16.7,cz),col=Color3.fromRGB(200,30,30),mat=PM,cc=false})
-	P({name="M",par=f,sz=Vector3.new(10,7,1),pos=Vector3.new(cx,Y+9,cz-4.6),col=Color3.fromRGB(255,255,200),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.15})
-	for i=0,2 do
-		local drum = CYL({name="M",par=f,sz=Vector3.new(5.5,2.5,2.5),cf=CFrame.new(cx-3+i*3,Y+9,cz-5)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,215,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-		spinX(drum, 8+i*2)
-	end
-	P({name="M",par=f,sz=Vector3.new(10,2,8),pos=Vector3.new(cx,Y+1,cz),col=Color3.fromRGB(120,15,15),mat=PM})
-	local arm = P({name="M",par=f,sz=Vector3.new(1,9,1),pos=Vector3.new(cx+8,Y+12,cz),col=Color3.fromRGB(200,200,200),mat=PM,cc=false})
-	P({name="M",par=f,sz=Vector3.new(2.5,2.5,2.5),pos=Vector3.new(cx+8,Y+17,cz),col=Color3.fromRGB(255,80,80),mat=Enum.Material.Neon,cc=false,shadow=false})
-	for _, col in ipairs({Color3.fromRGB(255,50,50),Color3.fromRGB(50,255,50),Color3.fromRGB(255,255,50)}) do
-		bob(arm,cx+8,Y+12,cz,0.8,0.15)
-	end
-	addLight(cab,3.5,26,Color3.fromRGB(255,180,0))
-	makeBillboard(cab,"🎰 SLOT MACHINE",Color3.fromRGB(255,200,50),14,220,46,85)
-end
-
--- RR_M: ⚡ Tesla Coil
-local function buildTeslaCoil(cx, cz, f)
-	local Y = DECK_TOP
-	local base = P({name="M",par=f,sz=Vector3.new(10,4,10),pos=Vector3.new(cx,Y+2.2,cz),col=Color3.fromRGB(30,30,42),mat=PM})
-	CYL({name="M",par=f,sz=Vector3.new(16,4.5,4.5),cf=CFrame.new(cx,Y+12,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(50,50,60),mat=PM,cc=false})
-	for i=0,5 do
-		CYL({name="M",par=f,sz=Vector3.new(0.8,3.8-i*0.3,3.8-i*0.3),cf=CFrame.new(cx,Y+6+i*2.4,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(200,220,255),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.2})
-	end
-	local top = P({name="M",par=f,sz=Vector3.new(2,2,2),pos=Vector3.new(cx,Y+20,cz),col=Color3.fromRGB(180,220,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	for i=0,3 do
-		local a=math.rad(i*90); local r=6
-		local arc=P({name="M",par=f,sz=Vector3.new(0.3,6,0.3),
-			cf=CFrame.new(cx+math.cos(a)*r,Y+17,cz+math.sin(a)*r)*CFrame.Angles(0,0,math.rad(30+i*5)),
-			col=Color3.fromRGB(150,200,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-		bob(arc,cx+math.cos(a)*r,Y+17,cz+math.sin(a)*r,1.5,0.12+i*0.04)
-	end
-	addLight(top,6,40,Color3.fromRGB(150,200,255))
-	makeBillboard(base,"⚡ TESLA COIL",Color3.fromRGB(180,220,255),24,220,46,85)
-end
-
--- C_NN: 🔭 Observatory
-local function buildObservatory(cx, cz, f)
-	local Y = DECK_TOP
-	local plat = P({name="M",par=f,sz=Vector3.new(18,3,18),pos=Vector3.new(cx,Y+1.7,cz),col=Color3.fromRGB(45,42,55),mat=PM})
-	for _, off in ipairs({{-6,0},{6,0},{0,-6},{0,6}}) do
-		P({name="M",par=f,sz=Vector3.new(2,6,2),pos=Vector3.new(cx+off[1],Y+6,cz+off[2]),col=Color3.fromRGB(50,45,62),mat=PM,cc=false})
-	end
-	CYL({name="M",par=f,sz=Vector3.new(8,14,14),cf=CFrame.new(cx,Y+7.5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(55,50,68),mat=PM,cc=false})
-	CYL({name="M",par=f,sz=Vector3.new(8.2,15.5,15.5),cf=CFrame.new(cx,Y+7.5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(80,72,98),mat=PM,cc=false,tr=0.6})
-	P({name="M",par=f,sz=Vector3.new(1.5,2,12),pos=Vector3.new(cx,Y+12,cz),col=Color3.fromRGB(40,35,52),mat=PM,cc=false})
-	local scope = P({name="M",par=f,sz=Vector3.new(1.2,10,1.2),cf=CFrame.new(cx,Y+13,cz+2)*CFrame.Angles(math.rad(20),0,0),col=Color3.fromRGB(70,65,85),mat=PM,cc=false})
-	CYL({name="M",par=f,sz=Vector3.new(1,2.2,2.2),cf=CFrame.new(cx,Y+17,cz-1)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(120,180,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	spinWorldY(scope, cx, Y+13, cz+2, 0.4, CFrame.Angles(math.rad(20),0,0))
-	addLight(plat,3,30,Color3.fromRGB(120,160,255))
-	makeBillboard(plat,"🔭 OBSERVATORY",Color3.fromRGB(140,180,255),22,220,46,85)
-end
-
--- C_SS: 🧪 Chemical Reactor
-local function buildReactor(cx, cz, f)
-	local Y = DECK_TOP
-	local tank = CYL({name="M",par=f,sz=Vector3.new(14,8,8),cf=CFrame.new(cx,Y+9,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(38,36,50),mat=PM})
-	CYL({name="M",par=f,sz=Vector3.new(3,9,9),cf=CFrame.new(cx-5.5,Y+9,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(48,44,60),mat=PM,cc=false})
-	CYL({name="M",par=f,sz=Vector3.new(3,9,9),cf=CFrame.new(cx+5.5,Y+9,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(48,44,60),mat=PM,cc=false})
-	CYL({name="M",par=f,sz=Vector3.new(14.5,1.2,1.2),cf=CFrame.new(cx,Y+13,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(200,80,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	CYL({name="M",par=f,sz=Vector3.new(14.5,1.2,1.2),cf=CFrame.new(cx,Y+5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(0,160,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	for _, ox in ipairs({-4,0,4}) do
-		CYL({name="M",par=f,sz=Vector3.new(6,1.5,1.5),cf=CFrame.new(cx+ox,Y+11.5,cz+5)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(60,58,72),mat=PM,cc=false})
-	end
-	P({name="M",par=f,sz=Vector3.new(8,0.5,4),pos=Vector3.new(cx,Y+16.5,cz),col=Color3.fromRGB(46,44,58),mat=PM,cc=false,shadow=false})
-	local glow = CYL({name="M",par=f,sz=Vector3.new(1,7.8,7.8),cf=CFrame.new(cx,Y+9,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(0,220,255),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.4})
-	addLight(tank,4,34,Color3.fromRGB(0,200,255))
-	makeBillboard(tank,"🧪 CHEMICAL REACTOR",Color3.fromRGB(60,240,255),12,240,46,90)
-end
-
--- LL_S: 🚀 Rocket Silo
-local function buildRocketSilo(cx, cz, f)
-	local Y = DECK_TOP
-	P({name="M",par=f,sz=Vector3.new(16,2,16),pos=Vector3.new(cx,Y+1.1,cz),col=Color3.fromRGB(35,33,45),mat=PM})
-	CYL({name="M",par=f,sz=Vector3.new(19,5,5),cf=CFrame.new(cx,Y+11.5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(225,220,230),mat=PM,cc=false})
-	CYL({name="M",par=f,sz=Vector3.new(4,4.8,4.8),cf=CFrame.new(cx,Y+21.5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,60,30),mat=Enum.Material.Neon,cc=false,shadow=false})
-	CYL({name="M",par=f,sz=Vector3.new(2,3.5,3.5),cf=CFrame.new(cx,Y+24.5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(220,218,225),mat=PM,cc=false})
-	for i=0,3 do
-		local a=math.rad(i*90)
-		P({name="M",par=f,sz=Vector3.new(0.8,20,0.8),pos=Vector3.new(cx+math.cos(a)*7,Y+11,cz+math.sin(a)*7),col=Color3.fromRGB(55,52,65),mat=PM,cc=false,shadow=false})
-		P({name="M",par=f,sz=Vector3.new(6,0.8,0.8),cf=CFrame.new(cx+math.cos(a)*4,Y+15,cz+math.sin(a)*4)*CFrame.Angles(0,a,0),col=Color3.fromRGB(55,52,65),mat=PM,cc=false,shadow=false})
-	end
-	local exhaust=CYL({name="M",par=f,sz=Vector3.new(3,5.5,5.5),cf=CFrame.new(cx,Y+4,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,140,0),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.3})
-	bob(exhaust,cx,Y+4,cz,1.2,0.1,CFrame.Angles(0,0,math.rad(90)))
-	local body=P({name="M",par=f,sz=Vector3.new(1,1,1),pos=Vector3.new(cx,Y+14,cz),col=Color3.fromRGB(0,0,0),tr=1,cc=false,par=f})
-	addLight(body,5,38,Color3.fromRGB(255,120,0))
-	makeBillboard(exhaust,"🚀 ROCKET SILO",Color3.fromRGB(255,180,80),30,220,46,90)
-end
-
--- RR_N: 💎 Crystal Forge
-local function buildCrystalForge(cx, cz, f)
-	local Y = DECK_TOP
-	P({name="M",par=f,sz=Vector3.new(14,3,14),pos=Vector3.new(cx,Y+1.7,cz),col=Color3.fromRGB(30,25,40),mat=PM})
-	local heights = {14,11,9,13,10,12,8}
-	local offsets = {{0,0},{5,2},{-5,3},{4,-4},{-3,-5},{6,-2},{-4,4}}
-	for i,o in ipairs(offsets) do
-		P({name="M",par=f,sz=Vector3.new(2.5,heights[i],2.5),
-			cf=CFrame.new(cx+o[1],Y+heights[i]/2+2,cz+o[2])*CFrame.Angles(0,math.rad(i*37),math.rad(8)),
-			col=Color3.fromRGB(100,50+i*20,200+i*5),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.1})
-	end
-	local core=P({name="M",par=f,sz=Vector3.new(3,3,3),pos=Vector3.new(cx,Y+6,cz),col=Color3.fromRGB(255,255,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	P({name="M",par=f,sz=Vector3.new(8,3,6),pos=Vector3.new(cx,Y+2.5,cz-3),col=Color3.fromRGB(60,50,35),mat=PM})
-	P({name="M",par=f,sz=Vector3.new(5,2,5),pos=Vector3.new(cx,Y+3.8,cz-3),col=Color3.fromRGB(255,160,60),mat=Enum.Material.Neon,cc=false,shadow=false})
-	addLight(core,6,42,Color3.fromRGB(180,120,255))
-	makeBillboard(core,"💎 CRYSTAL FORGE",Color3.fromRGB(200,150,255),12,220,46,90)
-end
-
--- RR_S: 🕰️ Clockwork Engine
-local function buildClockEngine(cx, cz, f)
-	local Y = DECK_TOP
-	local face=P({name="M",par=f,sz=Vector3.new(0.8,14,14),pos=Vector3.new(cx,Y+8,cz),col=Color3.fromRGB(28,22,18),mat=PM})
-	P({name="M",par=f,sz=Vector3.new(0.9,15.5,15.5),pos=Vector3.new(cx,Y+8,cz),col=Color3.fromRGB(90,65,28),mat=PM,cc=false,shadow=false,tr=0.8})
-	CYL({name="M",par=f,sz=Vector3.new(1,14,14),cf=CFrame.new(cx,Y+8,cz),col=Color3.fromRGB(200,160,60),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.85})
-	for i=0,11 do
-		local a=math.rad(i*30); local r=6
-		P({name="M",par=f,sz=Vector3.new(1.2,0.5,0.5),
-			pos=Vector3.new(cx,Y+8+math.cos(a)*r,cz+math.sin(a)*r),
-			col=Color3.fromRGB(220,180,80),mat=Enum.Material.Neon,cc=false,shadow=false})
-	end
-	local bigGear=CYL({name="M",par=f,sz=Vector3.new(1.5,11,11),cf=CFrame.new(cx+2.5,Y+7,cz+4),col=Color3.fromRGB(80,60,30),mat=PM,cc=false})
-	spinX(bigGear,4)
-	local smallGear=CYL({name="M",par=f,sz=Vector3.new(1.5,5,5),cf=CFrame.new(cx+3,Y+3,cz-4),col=Color3.fromRGB(70,52,25),mat=PM,cc=false})
-	spinX(smallGear,-8)
-	P({name="M",par=f,sz=Vector3.new(10,3,8),pos=Vector3.new(cx,Y+1.7,cz),col=Color3.fromRGB(45,35,20),mat=PM})
-	addLight(face,3.5,30,Color3.fromRGB(220,180,80))
-	makeBillboard(face,"🕰️ CLOCKWORK ENGINE",Color3.fromRGB(220,180,80),11,240,46,90)
-end
-
--- L_NN: 🌊 Wave Condenser
-local function buildWaveCondenser(cx, cz, f)
-	local Y = DECK_TOP
-	P({name="M",par=f,sz=Vector3.new(18,2,10),pos=Vector3.new(cx,Y+1.2,cz),col=Color3.fromRGB(25,35,55),mat=PM})
-	local pts = {{-7,0},{-5,4},{-2,7},{1,9},{4,7},{7,4},{9,0}}
-	for i=1,#pts-1 do
-		local ax,ay=pts[i][1],pts[i][2]; local bx,by=pts[i+1][1],pts[i+1][2]
-		local mx,my=(ax+bx)/2,(ay+by)/2
-		local dx,dy=bx-ax,by-ay; local len=math.sqrt(dx*dx+dy*dy)
-		local angle=math.atan2(dy,dx)
-		P({name="M",par=f,sz=Vector3.new(len+0.5,2.5,6),
-			cf=CFrame.new(cx+mx,Y+3+my,cz)*CFrame.Angles(0,0,-angle),
-			col=Color3.fromRGB(0,160,220),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.15})
-		P({name="M",par=f,sz=Vector3.new(len+1,2,5),
-			cf=CFrame.new(cx+mx,Y+3+my,cz)*CFrame.Angles(0,0,-angle),
-			col=Color3.fromRGB(20,80,140),mat=PM,cc=false,shadow=false})
-	end
-	P({name="M",par=f,sz=Vector3.new(5,4,6),pos=Vector3.new(cx-9,Y+3,cz),col=Color3.fromRGB(30,55,80),mat=PM,cc=false})
-	local anchor=P({name="M",par=f,sz=Vector3.new(1,1,1),pos=Vector3.new(cx,Y+10,cz),tr=1,cc=false})
-	addLight(anchor,4,36,Color3.fromRGB(0,180,255))
-	makeBillboard(anchor,"🌊 WAVE CONDENSER",Color3.fromRGB(60,200,255),5,240,46,90)
-end
-
--- R_NN: 🧬 DNA Tower
-local function buildDNATower(cx, cz, f)
-	local Y = DECK_TOP
-	P({name="M",par=f,sz=Vector3.new(10,2,10),pos=Vector3.new(cx,Y+1.1,cz),col=Color3.fromRGB(22,22,30),mat=PM})
-	local N=18; local radius=4; local height=22
-	for i=0,N-1 do
-		local t=i/N; local a1=t*6*math.pi; local a2=a1+math.pi
-		local y=Y+3+t*height
-		local x1,z1=cx+math.cos(a1)*radius,cz+math.sin(a1)*radius
-		local x2,z2=cx+math.cos(a2)*radius,cz+math.sin(a2)*radius
-		CYL({name="M",par=f,sz=Vector3.new(0.5,0.9,0.9),cf=CFrame.new(x1,y,z1)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,60,80),mat=Enum.Material.Neon,cc=false,shadow=false})
-		CYL({name="M",par=f,sz=Vector3.new(0.5,0.9,0.9),cf=CFrame.new(x2,y,z2)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(60,120,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-		if i%3==0 then
-			local mx,my,mz=(x1+x2)/2,y,(z1+z2)/2
-			local dx,dz=x2-x1,z2-z1; local len=math.sqrt(dx*dx+dz*dz)
-			P({name="M",par=f,sz=Vector3.new(0.4,len,0.4),
-				cf=CFrame.new(mx,my,mz)*CFrame.Angles(0,math.atan2(dz,dx),math.rad(90)),
-				col=Color3.fromRGB(200,200,60),mat=Enum.Material.Neon,cc=false,shadow=false})
-		end
-	end
-	local top=P({name="M",par=f,sz=Vector3.new(3,3,3),pos=Vector3.new(cx,Y+27,cz),col=Color3.fromRGB(255,80,100),mat=Enum.Material.Neon,cc=false,shadow=false})
-	addLight(top,5,42,Color3.fromRGB(255,80,100))
-	makeBillboard(top,"🧬 DNA TOWER",Color3.fromRGB(255,100,120),8,210,46,90)
-end
-
--- L_SS: 💣 Coin Cannon Array
-local function buildCoinCannon(cx, cz, f)
-	local Y = DECK_TOP
-	P({name="M",par=f,sz=Vector3.new(18,4,10),pos=Vector3.new(cx,Y+2.2,cz),col=Color3.fromRGB(35,30,20),mat=PM})
-	for _, ox in ipairs({-5,0,5}) do
-		P({name="M",par=f,sz=Vector3.new(4,4,4),pos=Vector3.new(cx+ox,Y+5.5,cz),col=Color3.fromRGB(50,40,25),mat=PM,cc=false})
-		local barrel=CYL({name="M",par=f,sz=Vector3.new(10,2.5,2.5),cf=CFrame.new(cx+ox,Y+5.5,cz-5)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(40,35,22),mat=PM,cc=false})
-		CYL({name="M",par=f,sz=Vector3.new(10.2,2.7,2.7),cf=CFrame.new(cx+ox,Y+5.5,cz-5)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,190,0),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.7})
-		bob(barrel,cx+ox,Y+5.5,cz-5,0.5,0.18,CFrame.Angles(0,0,math.rad(90)))
-	end
-	P({name="M",par=f,sz=Vector3.new(5,6,4),pos=Vector3.new(cx+7.5,Y+5,cz+1),col=Color3.fromRGB(45,38,22),mat=PM,cc=false})
-	for i=0,2 do P({name="M",par=f,sz=Vector3.new(4.5,1.5,3.5),pos=Vector3.new(cx+7.5,Y+2+i*1.8,cz+1),col=Color3.fromRGB(200,150,20),mat=PM,cc=false,shadow=false}) end
-	local anchor=P({name="M",par=f,sz=Vector3.new(1,1,1),pos=Vector3.new(cx,Y+8,cz),tr=1,cc=false})
-	addLight(anchor,3.5,30,Color3.fromRGB(255,200,0))
-	makeBillboard(anchor,"💣 COIN CANNONS",Color3.fromRGB(255,210,80),10,220,46,90)
-end
-
--- R_SS: ⛏️ Mining Rig
-local function buildMiningRig(cx, cz, f)
-	local Y = DECK_TOP
-	P({name="M",par=f,sz=Vector3.new(18,2,18),pos=Vector3.new(cx,Y+1.1,cz),col=Color3.fromRGB(40,35,25),mat=PM})
-	for _, pos in ipairs({{-7,-7},{-7,7},{7,-7},{7,7}}) do
-		P({name="M",par=f,sz=Vector3.new(1.5,16,1.5),pos=Vector3.new(cx+pos[1],Y+9,cz+pos[2]),col=Color3.fromRGB(60,50,32),mat=PM,cc=false,shadow=false})
-	end
-	for h in ({4,8,12}) do
-		P({name="M",par=f,sz=Vector3.new(16,0.8,16),pos=Vector3.new(cx,Y+h,cz),col=Color3.fromRGB(50,42,28),mat=PM,cc=false,shadow=false})
-	end
-	local drillHead=CYL({name="M",par=f,sz=Vector3.new(8,4.5,4.5),cf=CFrame.new(cx,Y+5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(80,65,35),mat=PM})
-	spinX(drillHead,12)
-	CYL({name="M",par=f,sz=Vector3.new(8.5,1.2,1.2),cf=CFrame.new(cx,Y+5,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,150,0),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.2})
-	P({name="M",par=f,sz=Vector3.new(7,2.5,4),pos=Vector3.new(cx+6,Y+2,cz),col=Color3.fromRGB(55,40,20),mat=PM,cc=false})
-	for i=0,2 do P({name="M",par=f,sz=Vector3.new(6.5,1.2,3.5),pos=Vector3.new(cx+6,Y+1.2+i*1.4,cz),col=Color3.fromRGB(200,180,20),mat=PM,cc=false,shadow=false}) end
-	local beacon=P({name="M",par=f,sz=Vector3.new(2,2,2),pos=Vector3.new(cx,Y+17,cz),col=Color3.fromRGB(255,120,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	addLight(beacon,4,36,Color3.fromRGB(255,140,0))
-	makeBillboard(beacon,"⛏️ MINING RIG",Color3.fromRGB(255,160,60),6,210,46,90)
-end
-
--- RR_NN: 🌋 Lava Core
-local function buildLavaCore(cx, cz, f)
-	local Y = DECK_TOP
-	local sizes={{18,3,18},{14,4,14},{11,5,11},{8,5,8},{6,5,6},{4,4,4}}
-	for i,s in ipairs(sizes) do
-		P({name="M",par=f,sz=Vector3.new(s[1],s[2],s[3]),
-			pos=Vector3.new(cx,Y+s[2]/2+(i-1)*3.5,cz),
-			col=Color3.fromRGB(35+i*5,20,15),mat=Enum.Material.SmoothPlastic})
-	end
-	CYL({name="M",par=f,sz=Vector3.new(8,5.5,5.5),cf=CFrame.new(cx,Y+24,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,80,0),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.15})
-	local core=CYL({name="M",par=f,sz=Vector3.new(6,4,4),cf=CFrame.new(cx,Y+24,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(255,200,0),mat=Enum.Material.Neon,cc=false,shadow=false})
-	bob(core,cx,Y+24,cz,1.5,0.06,CFrame.Angles(0,0,math.rad(90)))
-	for i=0,5 do
-		local a=math.rad(i*60); local r=8+i%2*2; local h=4+i*3
-		P({name="M",par=f,sz=Vector3.new(1.5,4,1.5),
-			cf=CFrame.new(cx+math.cos(a)*r,Y+h,cz+math.sin(a)*r)*CFrame.Angles(0,0,math.rad(15+i*5)),
-			col=Color3.fromRGB(200+i*8,60,0),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.25})
-	end
-	addLight(core,8,52,Color3.fromRGB(255,160,0))
-	makeBillboard(core,"🌋 LAVA CORE",Color3.fromRGB(255,140,40),10,210,46,100)
-end
-
--- LL_SS: 🔮 Arcane Spire
-local function buildArcaneSpire(cx, cz, f)
-	local Y = DECK_TOP
-	P({name="M",par=f,sz=Vector3.new(14,3,14),pos=Vector3.new(cx,Y+1.7,cz),col=Color3.fromRGB(25,18,38),mat=PM})
-	local widths={12,10,8,6,5,4,3,2}
-	for i,w in ipairs(widths) do
-		P({name="M",par=f,sz=Vector3.new(w,3.5,w),pos=Vector3.new(cx,Y+3+i*3.2,cz),
-			cf=CFrame.new(cx,Y+3+i*3.2,cz)*CFrame.Angles(0,math.rad(i*22.5),0),
-			col=Color3.fromRGB(50+i*8,20+i*5,80+i*12),mat=PM,cc=false})
-	end
-	P({name="M",par=f,sz=Vector3.new(1.5,6,1.5),pos=Vector3.new(cx,Y+29,cz),col=Color3.fromRGB(180,50,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	local tip=P({name="M",par=f,sz=Vector3.new(2,2,2),pos=Vector3.new(cx,Y+32,cz),col=Color3.fromRGB(255,255,255),mat=Enum.Material.Neon,cc=false,shadow=false})
-	for i=0,4 do
-		local a=math.rad(i*72)
-		local crystal=P({name="M",par=f,sz=Vector3.new(1.2,5,1.2),
-			cf=CFrame.new(cx+math.cos(a)*8,Y+18,cz+math.sin(a)*8)*CFrame.Angles(0,0,math.rad(20)),
-			col=Color3.fromRGB(160+i*12,40,200+i*8),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.1})
-		bob(crystal,cx+math.cos(a)*8,Y+18,cz+math.sin(a)*8,3,0.06+i*0.025,CFrame.Angles(0,0,math.rad(20)))
-	end
-	addLight(tip,7,52,Color3.fromRGB(200,80,255))
-	makeBillboard(tip,"🔮 ARCANE SPIRE",Color3.fromRGB(210,100,255),8,220,46,100)
-end
-
--- RR_SS: 🛸 UFO Harvester
-local function buildUFO(cx, cz, f)
-	local Y = DECK_TOP
-	P({name="M",par=f,sz=Vector3.new(14,1.5,14),pos=Vector3.new(cx,Y+0.9,cz),col=Color3.fromRGB(22,22,28),mat=PM})
-	local disc=CYL({name="M",par=f,sz=Vector3.new(4,19,19),cf=CFrame.new(cx,Y+14,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(55,52,68),mat=PM})
-	CYL({name="M",par=f,sz=Vector3.new(4.2,21,21),cf=CFrame.new(cx,Y+14,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(0,220,80),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.6})
-	CYL({name="M",par=f,sz=Vector3.new(5,8,8),cf=CFrame.new(cx,Y+17,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(60,58,78),mat=PM,cc=false})
-	CYL({name="M",par=f,sz=Vector3.new(5.2,9.5,9.5),cf=CFrame.new(cx,Y+17,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(160,220,255),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.7})
-	for i=0,7 do
-		local a=math.rad(i*45)
-		P({name="M",par=f,sz=Vector3.new(1,1,1),pos=Vector3.new(cx+math.cos(a)*10,Y+13,cz+math.sin(a)*10),col=Color3.fromRGB(0,220,80),mat=Enum.Material.Neon,cc=false,shadow=false})
-	end
-	CYL({name="M",par=f,sz=Vector3.new(14,5,5),cf=CFrame.new(cx,Y+7,cz)*CFrame.Angles(0,0,math.rad(90)),col=Color3.fromRGB(0,220,80),mat=Enum.Material.Neon,cc=false,shadow=false,tr=0.75})
-	spinWorldY(disc,cx,Y+14,cz,0.8,CFrame.Angles(0,0,math.rad(90)))
-	addLight(disc,6,48,Color3.fromRGB(0,220,80))
-	makeBillboard(disc,"🛸 UFO HARVESTER",Color3.fromRGB(80,255,160),12,220,46,100)
-end
-
--- ── PER-PLOT MACHINE ASSIGNMENT (each plot gets a unique machine) ──
-local PLOT_MACHINE = {
-	-- Ring 1 (2000)
-	L_N  = buildMagnet,
-	R_N  = buildAlchemyCauldron,
-	L_S  = buildSlotMachine,
-	R_S  = buildPrinter,
-	-- Ring 2 (10000)
-	LL_M = buildRoomba,
-	RR_M = buildTeslaCoil,
-	C_NN = buildObservatory,
-	C_SS = buildReactor,
-	-- Ring 3 (25000)
-	LL_N = buildFactory,
-	LL_S = buildRocketSilo,
-	RR_N = buildCrystalForge,
-	RR_S = buildClockEngine,
-	L_NN = buildWaveCondenser,
-	R_NN = buildDNATower,
-	L_SS = buildCoinCannon,
-	R_SS = buildMiningRig,
-	-- Ring 4 (50000)
-	LL_NN = buildVault,
-	RR_NN = buildLavaCore,
-	LL_SS = buildArcaneSpire,
-	RR_SS = buildUFO,
-}
-
-local function doUnlock(plotId, ownerPlayer)
-	local state = plotState[plotId]
-	if not state or state.unlocked then return end
-	state.unlocked      = true
-	state.ownerUserId   = ownerPlayer and ownerPlayer.UserId or nil
-	state.raidFlashing  = false
-	for _, p in ipairs(state.folder:GetChildren()) do p:Destroy() end
-	local def   = state.def
-
-	-- Tier-colored floor overlay — store ref so raid can flash it
-	local floorCol = getFloorCol(def.cost)
-	local floor = P({name="PlotFloor", par=state.folder,
-		sz=Vector3.new(PLOT_W-1, 0.08, PLOT_D-1),
-		pos=Vector3.new(def.cx, DECK_TOP+0.12, def.cz),
-		col=floorCol, mat=PM, cc=false, tr=0.1})
-	state.floorPart     = floor
-	state.floorOrigCol  = floorCol
-
-	-- Push any players standing inside the plot out before the machine spawns
-	local HALF = 27
-	for _, plr in ipairs(Players:GetPlayers()) do
-		local char = plr.Character
-		if not char then continue end
-		local hrp = char:FindFirstChild("HumanoidRootPart")
-		if not hrp then continue end
-		local pos = hrp.Position
-		if math.abs(pos.X - def.cx) < HALF and math.abs(pos.Z - def.cz) < HALF then
-			local ox = pos.X - def.cx
-			local oz = pos.Z - def.cz
-			if math.abs(ox) >= math.abs(oz) then
-				hrp.CFrame = CFrame.new(def.cx + (ox >= 0 and HALF + 3 or -HALF - 3), pos.Y + 4, pos.Z)
-			else
-				hrp.CFrame = CFrame.new(pos.X, pos.Y + 4, def.cz + (oz >= 0 and HALF + 3 or -HALF - 3))
-			end
-		end
-	end
-
-	-- Spawn this plot's unique machine
-	local builder = PLOT_MACHINE[def.id]
-	if builder then
-		builder(def.cx, def.cz, state.folder)
-	end
-
-	-- Safety net: keep new parts non-collideable for 1s so any straggler isn't trapped
-	local solidParts = {}
-	for _, part in ipairs(state.folder:GetDescendants()) do
-		if part:IsA("BasePart") and part.CanCollide then
-			part.CanCollide = false
-			table.insert(solidParts, part)
-		end
-	end
-	task.delay(1, function()
-		for _, part in ipairs(solidParts) do
-			if part.Parent then part.CanCollide = true end
-		end
-	end)
-
-	-- ── INCOME TICKER VISUAL ──────────────────────────────────────
-	-- A floating coin that orbits above the machine to show it's earning money.
-	-- Clients see the rate via MachineRate_RE; this just shows activity.
-	local tickerHeight = DECK_TOP + (def.cost >= 200000 and 36 or def.cost >= 75000 and 30 or def.cost >= 25000 and 24 or 20)
-
-	-- Owner nameplate — anchor height matches ticker so it sits just above the machine
-	if ownerPlayer then
-		local a = Instance.new("Part", state.folder)
-		a.Anchored = true; a.CanCollide = false
-		a.Size = Vector3.new(1,1,1)
-		a.CFrame = CFrame.new(def.cx, tickerHeight + 4, def.cz)
-		a.Transparency = 1
-		makeBillboard(a, "⚡ "..ownerPlayer.Name, Color3.fromRGB(255,200,0), 4, 220, 50, 80)
-	end
-	local tickerCoin = CYL({par=state.folder, name="IncomeCoin",
-		sz=Vector3.new(0.4, 2.8, 2.8),
-		cf=CFrame.new(def.cx + 8, tickerHeight, def.cz) * CFrame.Angles(0, 0, math.rad(90)),
-		col=Color3.fromRGB(255,215,0), mat=Enum.Material.Neon, cc=false, shadow=false})
-	addLight(tickerCoin, 1.2, 12, Color3.fromRGB(255,200,0))
-	spinWorldY(tickerCoin, def.cx, tickerHeight, def.cz, 2.0)
-
-	state.rateBB     = nil
-	state.rateAnchor = nil
-
-	print("[MoneyIsland] Plot", plotId, "→", ownerPlayer and ownerPlayer.Name or "anonymous")
-end
-
-local function doLock(plotId)
-	local state = plotState[plotId]
-	if not state or not state.unlocked then return end
-	state.unlocked      = false
-	state.ownerUserId   = nil
-	state.floorPart     = nil
-	state.floorOrigCol  = nil
-	state.raidFlashing  = false
-	state.rateBB        = nil
-	state.rateAnchor    = nil
-	for _, p in ipairs(state.folder:GetChildren()) do p:Destroy() end
-	buildLockedPlot(state)
-	print("[MoneyIsland] Plot", plotId, "re-locked")
-end
-
--- ── GEYSER SYSTEM ─────────────────────────────────────────────
-local GEYSER_ACTIVE   = 8   -- seconds active per cycle
-local GEYSER_INACTIVE = 14  -- seconds inactive after burst (22s full cycle per geyser)
-local GEYSER_STAGGER  = 4   -- seconds delay between each geyser starting
-local GEYSER_CAP      = 4   -- coins per player per geyser per burst (enforced server-side)
-local contestedList   = {}  -- filled during plot init
-
-local function buildGeyserPad(cx, cz, folder)
-	-- Dark base platform
-	P({name="GeyserPad", par=folder,
-		sz=Vector3.new(PLOT_W-2, 0.25, PLOT_D-2),
-		pos=Vector3.new(cx, DECK_TOP+0.15, cz),
-		col=Color3.fromRGB(25,25,25), mat=Enum.Material.SmoothPlastic, cc=false, tr=0.15})
-
-	-- Glow ring (Neon cylinder, color changes on activate)
-	local ring = CYL({par=folder, name="GeyserRing",
-		sz=Vector3.new(1.2, 24, 24),
-		cf=CFrame.new(cx, DECK_TOP+0.2, cz) * CFrame.Angles(0,0,math.rad(90)),
-		col=Color3.fromRGB(50,50,50), mat=Enum.Material.Neon, cc=false, tr=0.65})
-	local light = addLight(ring, 0.8, 18, Color3.fromRGB(100,80,0))
-
-	-- Small center pillar
-	P({name="GeyserPillar", par=folder,
-		sz=Vector3.new(4,3,4),
-		pos=Vector3.new(cx, DECK_TOP+1.5, cz),
-		col=Color3.fromRGB(60,40,15), mat=PM})
-
-	-- "CONTESTED" label
-	local a = Instance.new("Part", folder)
-	a.Anchored = true; a.CanCollide = false
-	a.Size = Vector3.new(1,1,1)
-	a.CFrame = CFrame.new(cx, DECK_TOP+8, cz)
-	a.Transparency = 1
-	makeBillboard(a, "⚔️ CONTESTED\nGrab coins to earn!", Color3.fromRGB(255,80,80), 4, 260, 70, 65)
-
-	return ring, light
-end
-
-local function spawnGeyserBurst(cx, cz, geyserIdx, isMega)
-	-- Scale burst size with player count so income stays fair at all server sizes
-	local playerCount = #Players:GetPlayers()
-	local baseCount   = isMega and 15 or (5 + math.random(0,1))
-	local scaledBonus = math.floor(math.max(0, playerCount - 1) / 2) * 2
-	local count       = baseCount + scaledBonus
-	local halfW  = PLOT_W/2 - 5
-	local halfD  = PLOT_D/2 - 5
-	for _ = 1, count do
-		local angle  = math.random() * 2 * math.pi
-		local radius = math.random(4, 19)
-		local sx = cx + math.cos(angle) * math.min(radius, halfW)
-		local sz = cz + math.sin(angle) * math.min(radius, halfD)
-
-		local isRare   = math.random() < 0.05
-		local coinCol  = isRare and Color3.fromRGB(0,220,220) or Color3.fromRGB(255,200,0)
-		local coinGlow = isRare and Color3.fromRGB(0,200,255) or Color3.fromRGB(255,210,50)
-
-		local coin = CYL({par=coinsF, name="GeyserCoin",
-			sz=Vector3.new(0.5,3.2,3.2),
-			cf=CFrame.new(sx, DECK_TOP+2, sz) * CFrame.Angles(0, math.rad(math.random(0,360)), math.rad(90)),
-			col=coinCol, mat=Enum.Material.Neon, cc=false})
-		coin:SetAttribute("IsCoin",    true)
-		coin:SetAttribute("GeyserCoin",true)
-		coin:SetAttribute("GeyserIdx", geyserIdx)
-		if isRare then coin:SetAttribute("RareCoin", true) end
-		addLight(coin, isRare and 1.5 or 0.5, isRare and 10 or 6, coinGlow)
-
-		-- Per-coin per-player debounce — prevents hammering from same player
-		local debounce = {}
-		coin.Touched:Connect(function(hit)
-			if not coin.Parent then return end
-			local char = hit.Parent
-			local player = Players:GetPlayerFromCharacter(char)
-			if not player then
-				char = hit.Parent.Parent
-				player = Players:GetPlayerFromCharacter(char)
-			end
-			if not player then return end
-			local uid = player.UserId
-			if debounce[uid] then return end
-			debounce[uid] = true
-			task.delay(0.8, function() debounce[uid] = nil end)
-			-- Server decides: credit + destroy, or ignore (player hit cap)
-			coinBE:Fire(player, isRare, geyserIdx, coin, isMega)
-		end)
-
-		-- Auto-despawn after 15s if uncollected
-		task.delay(15, function()
-			if coin.Parent then coin:Destroy() end
-		end)
-	end
-end
-
--- ── INIT ALL PLOTS ────────────────────────────────────────────
-for _, def in ipairs(PLOT_DEFS) do
-	local folder = Instance.new("Folder", farmF); folder.Name = "Plot_"..def.id
-	local state  = {unlocked=def.contested or false, ownerUserId=nil, folder=folder, def=def}
-	plotState[def.id]              = state
-	plotByPos[def.cx.."_"..def.cz] = state
-
-	if def.contested then
-		local ring, light = buildGeyserPad(def.cx, def.cz, folder)
-		table.insert(contestedList, {cx=def.cx, cz=def.cz, idx=#contestedList+1, ring=ring, light=light})
-	else
-		buildLockedPlot(state)
-	end
-end
-
--- All locked plot signs start visible — any reachable plot is purchasable
-for _, state in pairs(plotState) do
-	if not state.unlocked and state.signBB then
-		state.signBB.Enabled = true
-	end
-end
-
--- ── GEYSER ACTIVATION LOOPS (staggered) ──────────────────────
-for i, cd in ipairs(contestedList) do
-	local ring  = cd.ring
-	local light = cd.light
-	local initialDelay = (i-1) * GEYSER_STAGGER
-	task.delay(initialDelay, function()
-		while true do
-			-- Activate
-			ring.Color        = Color3.fromRGB(255,190,0)
-			ring.Transparency = 0.05
-			light.Brightness  = 6
-			light.Color       = Color3.fromRGB(255,200,0)
-			GeyserActivateBE:Fire(i)            -- server resets per-player caps
-			GeyserStateRE:FireAllClients(i, true) -- tell clients this geyser is active
-			spawnGeyserBurst(cd.cx, cd.cz, i)
-
-			task.wait(GEYSER_ACTIVE)
-
-			-- Deactivate
-			ring.Color        = Color3.fromRGB(50,50,50)
-			ring.Transparency = 0.65
-			light.Brightness  = 0.8
-			light.Color       = Color3.fromRGB(100,80,0)
-			GeyserStateRE:FireAllClients(i, false)
-
-			task.wait(GEYSER_INACTIVE)
-		end
-	end)
-end
-
--- ── MEGA BURST EVENT (every 5 minutes, random geyser, 3× coins, no cap) ──
-task.delay(60, function()  -- first mega burst 60s after map loads
-	while true do
-		task.wait(300)  -- then every 5 minutes
-		if #contestedList == 0 then continue end
-		local pick = contestedList[math.random(1, #contestedList)]
-		-- Visual: flash geyser ring red/white for drama
-		local ring = pick.ring; local light = pick.light
-		ring.Color = Color3.fromRGB(255,60,60); light.Brightness = 10; light.Color = Color3.fromRGB(255,80,0)
-		GeyserActivateBE:Fire(pick.idx)
-		GeyserStateRE:FireAllClients(pick.idx, true, true)  -- 3rd arg = isMega for client HUD
-		MegaBurstBE:Fire(pick.idx)                          -- server clears cap for this geyser
-		spawnGeyserBurst(pick.cx, pick.cz, pick.idx, true)  -- triple coins, isMega=true
-		task.wait(GEYSER_ACTIVE + 2)
-		ring.Color = Color3.fromRGB(50,50,50); light.Brightness = 0.8; light.Color = Color3.fromRGB(100,80,0)
-		GeyserStateRE:FireAllClients(pick.idx, false)
-	end
-end)
-
--- ── COIN DESTROY HANDLER ──────────────────────────────────────
--- Server fires this when a coin is successfully credited (so it disappears from world)
-CoinDestroyBE.Event:Connect(function(coinRef)
-	if coinRef and coinRef.Parent then coinRef:Destroy() end
-end)
-
--- ── COIN RAIN EVENT ───────────────────────────────────────────
--- Fires during CoinRain random event: dump a burst at every geyser simultaneously
-CoinRainBE.Event:Connect(function()
-	for _, cd in ipairs(contestedList) do
-		spawnGeyserBurst(cd.cx, cd.cz, cd.idx, false)
-		cd.ring.Color        = Color3.fromRGB(255,215,0)
-		cd.ring.Transparency = 0.05
-		cd.light.Brightness  = 8
-		cd.light.Color       = Color3.fromRGB(255,215,0)
-		GeyserStateRE:FireAllClients(cd.idx, true)
-		task.delay(GEYSER_ACTIVE, function()
-			cd.ring.Color        = Color3.fromRGB(50,50,50)
-			cd.ring.Transparency = 0.65
-			cd.light.Brightness  = 0.8
-			cd.light.Color       = Color3.fromRGB(100,80,0)
-			GeyserStateRE:FireAllClients(cd.idx, false)
-		end)
-	end
-end)
-
--- ── GEYSER SURGE EVENT ────────────────────────────────────────
--- Fires during GeyserSurge random event: all geysers mega-burst together
-GeyserSurgeBE.Event:Connect(function()
-	for _, cd in ipairs(contestedList) do
-		cd.ring.Color        = Color3.fromRGB(255,80,0)
-		cd.ring.Transparency = 0.02
-		cd.light.Brightness  = 10
-		cd.light.Color       = Color3.fromRGB(255,120,0)
-		GeyserActivateBE:Fire(cd.idx)
-		GeyserStateRE:FireAllClients(cd.idx, true, true)
-		spawnGeyserBurst(cd.cx, cd.cz, cd.idx, true)
-		task.delay(GEYSER_ACTIVE + 2, function()
-			cd.ring.Color        = Color3.fromRGB(50,50,50)
-			cd.ring.Transparency = 0.65
-			cd.light.Brightness  = 0.8
-			cd.light.Color       = Color3.fromRGB(100,80,0)
-			GeyserStateRE:FireAllClients(cd.idx, false)
-		end)
-	end
-end)
-
--- ── PLOT EVENT HANDLERS ───────────────────────────────────────
--- plotUnlockedBE: MainGameServer fires when plot is successfully purchased
-plotUnlockedBE.Event:Connect(function(id, player)
-	doUnlock(id, player)
-end)
-
--- PlotRelockBE: MainGameServer fires when player leaves (their plots release)
-PlotRelockBE.Event:Connect(function(plotId)
-	doLock(plotId)
-end)
-
--- PrestigeResetBE: MainGameServer fires on prestige with the userId
--- Only re-locks plots owned by that specific player
-PrestigeResetBE.Event:Connect(function(userId)
-	for plotId, state in pairs(plotState) do
-		if state.unlocked and state.ownerUserId == userId then
-			doLock(plotId)
-		end
-	end
-	-- Refresh signs after mass relock
-	for _, state in pairs(plotState) do
-		if not state.unlocked and not state.def.contested and state.signBB then
-			state.signBB.Enabled = hasUnlockedNeighbor(state.def)
-		end
-	end
-	print("[MoneyIsland] Plots re-locked for userId:", userId)
-end)
-
--- PlotTransferBE: MainGameServer fires on successful raid — rebuild plot for new owner
-PlotTransferBE.Event:Connect(function(plotId, newOwnerPlayer)
-	local state = plotState[plotId]
-	if not state then return end
-	doLock(plotId)
-	task.wait(0.05)
-	if newOwnerPlayer and newOwnerPlayer.Parent then
-		doUnlock(plotId, newOwnerPlayer)
-	end
-	print("[MoneyIsland] Plot", plotId, "raided → transferred to", newOwnerPlayer and newOwnerPlayer.Name or "nobody")
-end)
-
--- ── RAID FLASH HANDLER ────────────────────────────────────────
--- MainGameServer fires PlotRaidAlert_BE(plotId, isActive) when a raid starts/stops.
--- We pulse the plot floor red while the raid is active.
 local TweenService = game:GetService("TweenService")
+local WS           = game:GetService("Workspace")
 
-PlotRaidAlertBE.Event:Connect(function(plotId, isActive)
-	local state = plotState[plotId]
-	if not state or not state.unlocked then return end
-	local floor = state.floorPart
-	if not floor then return end
+-- ============================================================
+-- Inline config
+-- ============================================================
 
-	if isActive and not state.raidFlashing then
-		state.raidFlashing = true
-		-- Pulse floor between red and original color while raiding
-		task.spawn(function()
-			while state.raidFlashing and floor.Parent do
-				TweenService:Create(floor, TweenInfo.new(0.4, Enum.EasingStyle.Sine),
-					{Color = Color3.fromRGB(220, 30, 30)}):Play()
-				task.wait(0.4)
-				if not state.raidFlashing then break end
-				TweenService:Create(floor, TweenInfo.new(0.4, Enum.EasingStyle.Sine),
-					{Color = Color3.fromRGB(255, 80, 80)}):Play()
-				task.wait(0.4)
-			end
-		end)
-		-- Large "⚠️ RAID!" billboard above the plot
-		if not state.raidBillboardPart then
-			local rba = Instance.new("Part", state.folder)
-			rba.Name = "RaidAlertAnchor"
-			rba.Anchored = true; rba.CanCollide = false
-			rba.Size = Vector3.new(1,1,1); rba.Transparency = 1
-			rba.CFrame = CFrame.new(state.def.cx, DECK_TOP + 26, state.def.cz)
-			local rbl = makeBillboard(rba, "🚨 RAID IN PROGRESS! 🚨", Color3.fromRGB(255, 60, 60), 0, 340, 56, 120)
-			rbl.Name = "RaidAlertBB"
-			state.raidBillboardPart = rba
-		end
-	elseif not isActive and state.raidFlashing then
-		state.raidFlashing = false
-		-- Restore floor color
-		if floor.Parent then
-			TweenService:Create(floor, TweenInfo.new(0.5, Enum.EasingStyle.Sine),
-				{Color = state.floorOrigCol or Color3.fromRGB(108,75,38)}):Play()
-		end
-		-- Remove raid billboard
-		if state.raidBillboardPart then
-			state.raidBillboardPart:Destroy()
-			state.raidBillboardPart = nil
-		end
-	end
-end)
+local FACTIONS = {
+    {name="Red Militia",       primary=Color3.fromRGB(185,35,35),   accent=Color3.fromRGB(255,80,80)  },
+    {name="Blue Spec Ops",     primary=Color3.fromRGB(28,68,185),   accent=Color3.fromRGB(65,125,255) },
+    {name="Green Rangers",     primary=Color3.fromRGB(38,145,45),   accent=Color3.fromRGB(75,210,90)  },
+    {name="Gold Mercs",        primary=Color3.fromRGB(182,148,12),  accent=Color3.fromRGB(255,202,40) },
+    {name="Purple Shadow Ops", primary=Color3.fromRGB(105,28,165),  accent=Color3.fromRGB(168,78,255) },
+    {name="Orange Frontline",  primary=Color3.fromRGB(192,85,18),   accent=Color3.fromRGB(255,132,42) },
+    {name="Cyan Navy SEALs",   primary=Color3.fromRGB(20,155,175),  accent=Color3.fromRGB(50,208,228) },
+    {name="White Ghost Div",   primary=Color3.fromRGB(188,188,198), accent=Color3.fromRGB(228,228,242)},
+}
 
--- ── TWILIGHT SKYBOX + LIGHTING ───────────────────────────────
--- Late-evening twilight: dark enough for neon glow but bright enough to see
-Lighting.ClockTime      = 7.0     -- early morning / dawn
-Lighting.Brightness     = 1.4
-Lighting.Ambient        = Color3.fromRGB(85, 95, 145)   -- visible blue-tinted ambient
-Lighting.OutdoorAmbient = Color3.fromRGB(110, 122, 175)
-Lighting.GlobalShadows  = true
-Lighting.ShadowSoftness = 0.4
-Lighting.FogEnd         = 2200
-Lighting.FogColor       = Color3.fromRGB(22, 28, 55)
+-- Per-floor visual theme
+local FLOOR_THEME = {
+    [1]={name="Armory",    wall=Color3.fromRGB(62,62,72),  trim=Color3.fromRGB(88,88,102), light=Color3.fromRGB(200,210,255), neon=false},
+    [2]={name="Barracks",  wall=Color3.fromRGB(48,62,48),  trim=Color3.fromRGB(72,100,72), light=Color3.fromRGB(130,255,130), neon=true },
+    [3]={name="War Room",  wall=Color3.fromRGB(58,44,28),  trim=Color3.fromRGB(98,76,44),  light=Color3.fromRGB(255,145,65),  neon=true },
+    [4]={name="Black Ops", wall=Color3.fromRGB(16,16,22),  trim=Color3.fromRGB(58,40,92),  light=Color3.fromRGB(148,65,255),  neon=true },
+}
+local FLOOR_H    = {14, 16, 20, 24}   -- height of each floor in studs
+local PAD_H      = 2                   -- pad height off ground
+local BW         = 50                  -- building width
+local BD         = 38                  -- building depth
+-- Computed floor base-Y (interior floor level for each floor)
+local BASE_Y     = {PAD_H}
+for f = 2, 4 do BASE_Y[f] = BASE_Y[f-1] + FLOOR_H[f-1] + 2 end
+-- BASE_Y = {2, 18, 36, 58}
 
--- Sky with stars + visible sun
-local sky = Instance.new("Sky", Lighting)
-sky.StarCount       = 3000
-sky.MoonAngularSize = 9
-sky.SunAngularSize  = 8
+local BULLET_COLORS = {
+    Color3.fromRGB(255,240,160), Color3.fromRGB(160,220,255),
+    Color3.fromRGB(255,100,50),  Color3.fromRGB(200,80,255),
+}
+local AMBER   = Color3.fromRGB(255,162,0)
+local PLT_COL = Color3.fromRGB(28,28,34)
+local WLL_COL = Color3.fromRGB(20,20,26)
 
--- Bloom: neon machines glow but scene stays readable
-local bloom = Instance.new("BloomEffect", Lighting)
-bloom.Intensity  = 0.55
-bloom.Size       = 22
-bloom.Threshold  = 0.91
+local GC_DROPPERS = {
+    [1]={ {name="Pistol Range",baseCost=0,maxLevel=8,costMult=2.1},{name="Rifle Station",baseCost=200,maxLevel=8,costMult=2.1},{name="Shotgun Rack",baseCost=700,maxLevel=8,costMult=2.1},{name="Ammo Press",baseCost=2500,maxLevel=8,costMult=2.1} },
+    [2]={ {name="SMG Assembly",baseCost=9000,maxLevel=8,costMult=2.15},{name="AR Workshop",baseCost=25000,maxLevel=8,costMult=2.15},{name="Heavy Forge",baseCost=65000,maxLevel=8,costMult=2.15} },
+    [3]={ {name="Sniper Lab",baseCost=200000,maxLevel=8,costMult=2.2},{name="LMG Factory",baseCost=550000,maxLevel=8,costMult=2.2},{name="Launcher Bay",baseCost=1500000,maxLevel=8,costMult=2.2} },
+    [4]={ {name="Minigun Core",baseCost=4000000,maxLevel=8,costMult=2.3},{name="Rocket Depot",baseCost=12000000,maxLevel=8,costMult=2.3},{name="Railgun Lab",baseCost=35000000,maxLevel=8,costMult=2.3} },
+}
+local GC_WEAPONS = {
+    [1]={ {name="Pistol",cost=600},{name="Revolver",cost=2500},{name="Shotgun",cost=5000} },
+    [2]={ {name="SMG",cost=15000},{name="Assault Rifle",cost=35000},{name="Combat Shotgun",cost=75000} },
+    [3]={ {name="Sniper Rifle",cost=250000},{name="LMG",cost=600000},{name="Grenade Launcher",cost=1200000} },
+    [4]={ {name="Minigun",cost=5000000},{name="Rocket Launcher",cost=14000000},{name="Railgun",cost=30000000} },
+}
+local GC_FLOOR_COSTS = {0, 5000, 120000, 2500000}
 
--- Color grade: slight warm tint so machines pop
-local cc = Instance.new("ColorCorrectionEffect", Lighting)
-cc.Saturation = 0.14; cc.Brightness = 0.04; cc.Contrast = 0.06
-cc.TintColor  = Color3.fromRGB(215, 218, 255)
+-- ============================================================
+-- Helpers
+-- ============================================================
 
-local atmo = Instance.new("Atmosphere", Lighting)
-atmo.Density = 0.11; atmo.Offset = 0.04
-atmo.Color   = Color3.fromRGB(95, 108, 168)
-atmo.Decay   = Color3.fromRGB(45, 55, 100)
-atmo.Glare   = 0.04; atmo.Haze = 0.3
+local function makeBox(size, cf, color, mat, parent, name)
+    local p = Instance.new("Part")
+    p.Size        = size; p.CFrame    = cf
+    p.Color       = color; p.Material = mat or Enum.Material.SmoothPlastic
+    p.Anchored    = true; p.CastShadow = false
+    p.Name        = name or "Part"; p.Parent = parent or WS
+    return p
+end
 
-print("[MoneyIsland] Map v26 built! 20 unique machines, night skybox, CoinRain/GeyserSurge events.")
+local function makeWedge(size, cf, color, mat, parent, name)
+    local p = Instance.new("WedgePart")
+    p.Size = size; p.CFrame = cf; p.Color = color
+    p.Material = mat or Enum.Material.SmoothPlastic
+    p.Anchored = true; p.CastShadow = false
+    p.Name = name or "Wedge"; p.Parent = parent or WS
+    return p
+end
+
+local function addLight(part, ltype, color, range, brightness)
+    local l = Instance.new(ltype or "PointLight")
+    l.Color = color or Color3.new(1,1,1); l.Range = range or 16
+    l.Brightness = brightness or 2
+    if ltype == "SpotLight" then l.Angle = 50; l.Face = Enum.NormalId.Top end
+    l.Parent = part; return l
+end
+
+local function addBB(part, text, width, textCol, bgCol, maxDist)
+    local bb = Instance.new("BillboardGui")
+    bb.Size = UDim2.new(0, width or 200, 0, 46)
+    bb.StudsOffset = Vector3.new(0, 3.2, 0)
+    bb.AlwaysOnTop = false
+    bb.MaxDistance = maxDist or 24
+    bb.Adornee = part; bb.Parent = part
+    local lbl = Instance.new("TextLabel", bb)
+    lbl.Size = UDim2.new(1,0,1,0)
+    lbl.BackgroundColor3 = bgCol or Color3.fromRGB(8,8,12)
+    lbl.BackgroundTransparency = 0.1
+    lbl.TextColor3 = textCol or Color3.new(1,1,1)
+    lbl.Text = text; lbl.Font = Enum.Font.GothamBold
+    lbl.TextScaled = true; lbl.Name = "Label"; lbl.BorderSizePixel = 0
+    Instance.new("UICorner", lbl).CornerRadius = UDim.new(0.22, 0)
+    return lbl
+end
+
+local function pulse(part, c1, c2, dur)
+    task.spawn(function()
+        TweenService:Create(part, TweenInfo.new(dur or 1.4, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true), {Color=c2}):Play()
+    end)
+end
+
+local function numFmt(n)
+    if n>=1e9 then return string.format("%.1fB",n/1e9)
+    elseif n>=1e6 then return string.format("%.1fM",n/1e6)
+    elseif n>=1e3 then return string.format("%.1fK",n/1e3)
+    else return tostring(n) end
+end
+
+-- Hide all BaseParts and disable all ProximityPrompts in a folder (for progressive reveal)
+local function hideFolder(folder)
+    for _, d in ipairs(folder:GetDescendants()) do
+        if d:IsA("BasePart") then
+            d:SetAttribute("OrigTrans", d.Transparency)
+            d:SetAttribute("OrigCollide", d.CanCollide)
+            d.Transparency = 1; d.CanCollide = false; d.CastShadow = false
+        elseif d:IsA("ProximityPrompt") then
+            d.Enabled = false
+        end
+    end
+end
+
+-- ============================================================
+-- World folders
+-- ============================================================
+
+local mapF    = Instance.new("Folder"); mapF.Name="Map";      mapF.Parent=WS
+local tycF    = Instance.new("Folder"); tycF.Name="Tycoons";  tycF.Parent=WS
+local covF    = Instance.new("Folder"); covF.Name="Cover";    covF.Parent=WS
+local vipF    = Instance.new("Folder"); vipF.Name="VIPZone";  vipF.Parent=WS
+local ownF    = Instance.new("Folder"); ownF.Name="OwnerRoom"; ownF.Parent=WS
+
+-- ============================================================
+-- Platform
+-- ============================================================
+
+local PSIZE = Vector3.new(640, 5, 640)
+local hx = PSIZE.X/2; local hz = PSIZE.Z/2
+local wH = 82; local wT = 12
+
+makeBox(PSIZE, CFrame.new(0,-PSIZE.Y/2,0), PLT_COL, Enum.Material.SmoothPlastic, mapF, "Platform")
+
+-- Grid lines
+for i = -4, 4 do
+    local gc = i==0 and Color3.fromRGB(55,55,68) or Color3.fromRGB(36,36,44)
+    makeBox(Vector3.new(PSIZE.X,0.08,1.2), CFrame.new(0,0.04,i*80), gc, Enum.Material.SmoothPlastic, mapF, "GridH")
+    makeBox(Vector3.new(1.2,0.08,PSIZE.Z), CFrame.new(i*80,0.04,0), gc, Enum.Material.SmoothPlastic, mapF, "GridV")
+end
+
+-- Amber border neons inside platform edge
+for _,sd in ipairs({
+    {Vector3.new(PSIZE.X-4,0.4,1.5), CFrame.new(0,0.2,-(hz-1.5))},
+    {Vector3.new(PSIZE.X-4,0.4,1.5), CFrame.new(0,0.2,  hz-1.5)},
+    {Vector3.new(1.5,0.4,PSIZE.Z-4), CFrame.new(-(hx-1.5),0.2,0)},
+    {Vector3.new(1.5,0.4,PSIZE.Z-4), CFrame.new(  hx-1.5, 0.2,0)},
+}) do
+    local s = makeBox(sd[1],sd[2],AMBER,Enum.Material.Neon,mapF,"Border")
+    pulse(s,AMBER,Color3.fromRGB(255,200,80),2.2)
+end
+
+-- ============================================================
+-- Perimeter walls (south wall split for owner door)
+-- ============================================================
+
+local DOOR_W = 14
+local sHalf  = (PSIZE.X + wT*2 - DOOR_W)/2
+
+makeBox(Vector3.new(PSIZE.X+wT*2,wH,wT), CFrame.new(0,wH/2,-(hz+wT/2)),   WLL_COL, Enum.Material.SmoothPlastic, mapF, "WallN")
+makeBox(Vector3.new(sHalf,wH,wT),         CFrame.new(-(DOOR_W/2+sHalf/2),wH/2,hz+wT/2), WLL_COL, Enum.Material.SmoothPlastic, mapF, "WallS_L")
+makeBox(Vector3.new(sHalf,wH,wT),         CFrame.new(  DOOR_W/2+sHalf/2, wH/2,hz+wT/2), WLL_COL, Enum.Material.SmoothPlastic, mapF, "WallS_R")
+makeBox(Vector3.new(DOOR_W+6,10,wT+2),    CFrame.new(0,wH-5,hz+wT/2),     Color3.fromRGB(24,24,30), Enum.Material.SmoothPlastic, ownF, "DoorLintel")
+makeBox(Vector3.new(wT,wH,PSIZE.Z),       CFrame.new(-(hx+wT/2),wH/2,0),  WLL_COL, Enum.Material.SmoothPlastic, mapF, "WallW")
+makeBox(Vector3.new(wT,wH,PSIZE.Z),       CFrame.new(  hx+wT/2, wH/2,0),  WLL_COL, Enum.Material.SmoothPlastic, mapF, "WallE")
+
+-- Wall amber floodlights
+for _,wx in ipairs({-80,0,80}) do
+    for _,side in ipairs({-(hx+wT-2),(hx+wT-2)}) do
+        local wlp = makeBox(Vector3.new(2.5,2.5,2.5), CFrame.new(side,20,wx), AMBER, Enum.Material.Neon, mapF, "WLight")
+        addLight(wlp,"PointLight",Color3.fromRGB(255,175,70),55,1.8)
+    end
+end
+for _,wz in ipairs({-80,0,80}) do
+    for _,side in ipairs({-(hz+wT-2),(hz+wT-2)}) do
+        local wlp = makeBox(Vector3.new(2.5,2.5,2.5), CFrame.new(wz,20,side), AMBER, Enum.Material.Neon, mapF, "WLight")
+        addLight(wlp,"PointLight",Color3.fromRGB(255,175,70),55,1.8)
+    end
+end
+
+-- Battlements
+local bS = 18
+for i=1,math.floor((PSIZE.X+wT*2)/bS) do
+    local bx = -(hx+wT)+(i-0.5)*bS
+    local battC = Color3.fromRGB(16,16,20)
+    makeBox(Vector3.new(bS*0.48,7,wT*0.8), CFrame.new(bx,wH+3.5,-(hz+wT/2)), battC, Enum.Material.SmoothPlastic, mapF, "Batt")
+    makeBox(Vector3.new(bS*0.48,7,wT*0.8), CFrame.new(bx,wH+3.5,  hz+wT/2),  battC, Enum.Material.SmoothPlastic, mapF, "Batt")
+end
+for i=1,math.floor(PSIZE.Z/bS) do
+    local bz = -hz+(i-0.5)*bS; local battC = Color3.fromRGB(16,16,20)
+    makeBox(Vector3.new(wT*0.8,7,bS*0.48), CFrame.new(-(hx+wT/2),wH+3.5,bz), battC, Enum.Material.SmoothPlastic, mapF, "Batt")
+    makeBox(Vector3.new(wT*0.8,7,bS*0.48), CFrame.new(  hx+wT/2, wH+3.5,bz), battC, Enum.Material.SmoothPlastic, mapF, "Batt")
+end
+
+-- Corner towers
+for _,cv in ipairs({Vector3.new(-(hx+wT/2),0,-(hz+wT/2)),Vector3.new(hx+wT/2,0,-(hz+wT/2)),Vector3.new(-(hx+wT/2),0,hz+wT/2),Vector3.new(hx+wT/2,0,hz+wT/2)}) do
+    local tw=wT+14; local th=wH+30
+    makeBox(Vector3.new(tw,th,tw), CFrame.new(cv.X,th/2,cv.Z), Color3.fromRGB(18,18,24), Enum.Material.SmoothPlastic, mapF, "Tower")
+    local cap=makeBox(Vector3.new(tw+2,1.5,tw+2), CFrame.new(cv.X,th+0.75,cv.Z), AMBER, Enum.Material.Neon, mapF, "TowerCap")
+    addLight(cap,"PointLight",Color3.fromRGB(255,175,60),35,3)
+    addLight(makeBox(Vector3.new(tw,1,tw),CFrame.new(cv.X,th+0.5,cv.Z),WLL_COL,Enum.Material.SmoothPlastic,mapF,"TowerTop"),"SpotLight",Color3.fromRGB(240,215,155),115,6)
+end
+
+-- ============================================================
+-- Tycoon slot positions
+-- ============================================================
+
+local SLOTS = {
+    {pos=Vector3.new(-238,0,  0), look=Vector3.new( 1,0, 0)},
+    {pos=Vector3.new( 238,0,  0), look=Vector3.new(-1,0, 0)},
+    {pos=Vector3.new(  0,0,-238), look=Vector3.new( 0,0, 1)},
+    {pos=Vector3.new(  0,0, 238), look=Vector3.new( 0,0,-1)},
+    {pos=Vector3.new(-168,0,-168), look=Vector3.new( 1,0, 1).Unit},
+    {pos=Vector3.new( 168,0,-168), look=Vector3.new(-1,0, 1).Unit},
+    {pos=Vector3.new(-168,0, 168), look=Vector3.new( 1,0,-1).Unit},
+    {pos=Vector3.new( 168,0, 168), look=Vector3.new(-1,0,-1).Unit},
+}
+
+-- ============================================================
+-- Build one tycoon
+-- ============================================================
+
+local function buildTycoon(slotId, slotData, faction)
+    local folder = Instance.new("Folder")
+    folder.Name = "Tycoon_"..slotId; folder.Parent = tycF
+
+    local look   = slotData.look
+    local origin = slotData.pos
+    local rightV = Vector3.new(-look.Z, 0, look.X)
+    local baseCF = CFrame.fromMatrix(origin, rightV, Vector3.new(0,1,0), -look)
+    local function lc(x,y,z) return baseCF * CFrame.new(x,y,z) end
+
+    -- Foundation pad (always visible)
+    local pad = makeBox(Vector3.new(BW+10,PAD_H,BD+10), lc(0,PAD_H/2,0), Color3.fromRGB(28,28,34), Enum.Material.Concrete, folder, "Pad")
+    pad:SetAttribute("TycoonId", slotId); pad:SetAttribute("IsPad", true)
+
+    -- Faction-colored pad accent strip on front edge
+    local padStr = makeBox(Vector3.new(BW+10,0.4,1.5), lc(0,PAD_H+0.2,(BD+10)/2), faction.accent, Enum.Material.Neon, folder, "PadStripe")
+    pulse(padStr, faction.accent, Color3.fromRGB(255,255,200), 1.6)
+
+    -- Claim button (always visible, front-center of pad)
+    local claim = makeBox(Vector3.new(10,0.5,10), lc(0,PAD_H+0.25,(BD+8)/2-8), Color3.fromRGB(38,192,68), Enum.Material.Neon, folder, "ClaimButton")
+    claim:SetAttribute("TycoonId", slotId); claim:SetAttribute("IsClaimBtn", true)
+    addBB(claim, "CLAIM  "..faction.name, 220, Color3.fromRGB(255,255,200), Color3.fromRGB(8,18,6), 36)
+    pulse(claim, Color3.fromRGB(38,192,68), Color3.fromRGB(92,255,112), 0.95)
+    addLight(claim,"PointLight",Color3.fromRGB(55,255,85),18,2.5)
+    local pp = Instance.new("ProximityPrompt"); pp.ActionText="Claim"; pp.ObjectText=faction.name
+    pp.MaxActivationDistance=14; pp.RequiresLineOfSight=false; pp.Parent=claim
+
+    -- ================================================================
+    -- Build each floor (all content hidden initially)
+    -- ================================================================
+
+    for floor = 1, 4 do
+        local fth  = FLOOR_THEME[floor]
+        local fac  = faction
+        local baseY = BASE_Y[floor]
+        local fh    = FLOOR_H[floor]
+
+        local floorFolder = Instance.new("Folder")
+        floorFolder.Name = "Floor_"..floor; floorFolder.Parent = folder
+
+        local function fl(x,y,z) return baseCF*CFrame.new(x,y,z) end
+
+        -- ---- Structural walls ----
+        -- Back wall
+        makeBox(Vector3.new(BW,fh,2.5), fl(0,baseY+fh/2,-BD/2+1.25), fth.wall, Enum.Material.Concrete, floorFolder, "BW_F"..floor)
+        -- Left wall
+        makeBox(Vector3.new(2.5,fh,BD), fl(-BW/2+1.25,baseY+fh/2,0), fth.wall, Enum.Material.Concrete, floorFolder, "LW_F"..floor)
+        -- Right wall
+        makeBox(Vector3.new(2.5,fh,BD), fl( BW/2-1.25,baseY+fh/2,0), fth.wall, Enum.Material.Concrete, floorFolder, "RW_F"..floor)
+        -- Floor slab (f>1 only, f==1 uses pad)
+        if floor > 1 then
+            makeBox(Vector3.new(BW,2,BD), fl(0,baseY+1,0), Color3.fromRGB(35,35,42), Enum.Material.SmoothPlastic, floorFolder, "FLSlab_F"..floor)
+        end
+        -- Ceiling slab
+        makeBox(Vector3.new(BW+3,2,BD+3), fl(0,baseY+fh+1,0), Color3.fromRGB(34,34,42), Enum.Material.SmoothPlastic, floorFolder, "Slab_F"..floor)
+
+        -- Corner pilasters
+        for _,cx in ipairs({-BW/2+1.5,BW/2-1.5}) do
+            for _,cz in ipairs({-BD/2+1.5,BD/2-1.5}) do
+                makeBox(Vector3.new(3,fh,3), fl(cx,baseY+fh/2,cz), Color3.fromRGB(28,28,35), Enum.Material.SmoothPlastic, floorFolder, "Pillar_F"..floor)
+            end
+        end
+
+        -- Faction fascia strip on front (top of each floor)
+        makeBox(Vector3.new(BW,3.5,2), fl(0,baseY+fh-1.75,BD/2-1), fac.primary, Enum.Material.SmoothPlastic, floorFolder, "Fascia_F"..floor)
+        -- Neon accent below fascia (only F2+)
+        if floor >= 2 or true then
+            local neon = makeBox(Vector3.new(BW-8,0.45,1), fl(0,baseY+fh-4,BD/2), fac.accent, Enum.Material.Neon, floorFolder, "Neon_F"..floor)
+            pulse(neon, fac.accent, Color3.fromRGB(255,255,255), 1.5)
+        end
+        -- Side window neons (F2+)
+        if floor >= 2 then
+            for _,wnh in ipairs({0.3,0.65}) do
+                makeBox(Vector3.new(0.5,1.2,BD-10), fl(-BW/2+1,baseY+fh*wnh,0), fth.light, Enum.Material.Neon, floorFolder, "WinL_F"..floor)
+                makeBox(Vector3.new(0.5,1.2,BD-10), fl( BW/2-1,baseY+fh*wnh,0), fth.light, Enum.Material.Neon, floorFolder, "WinR_F"..floor)
+            end
+        end
+        -- F4 special: extra neon edges around building exterior
+        if floor == 4 then
+            local edgN = makeBox(Vector3.new(BW+3,0.5,1), fl(0,baseY+fh+2.1,BD/2+1.5), fac.accent, Enum.Material.Neon, floorFolder, "EdgeN_F4")
+            pulse(edgN, fac.accent, Color3.fromRGB(255,255,255), 1.2)
+            local edgS = makeBox(Vector3.new(BW+3,0.5,1), fl(0,baseY+fh+2.1,-BD/2-1.5), fac.accent, Enum.Material.Neon, floorFolder, "EdgeS_F4")
+            pulse(edgS, fac.accent, Color3.fromRGB(255,255,255), 1.2)
+        end
+
+        -- Ceiling light
+        local cL = makeBox(Vector3.new(5,0.45,5), fl(0,baseY+fh-0.5,0), fth.light, Enum.Material.Neon, floorFolder, "CLight_F"..floor)
+        addLight(cL, "PointLight", fth.light, 28, 2.2)
+
+        -- Floor label (on fascia, right corner)
+        local flLabel = makeBox(Vector3.new(7,3.5,0.4), fl(BW/2-5.5,baseY+fh-6.5,BD/2+0.25), fac.primary, Enum.Material.SmoothPlastic, floorFolder, "FLabel_F"..floor)
+        addBB(flLabel, "F"..floor.."  "..fth.name, 165, fac.accent, fac.primary, 32)
+
+        -- ---- Dropper machines (back half, left-to-center, avoiding right side) ----
+        local dlist  = GC_DROPPERS[floor]
+        local dCount = #dlist
+        -- X positions: spread across left+center portion (avoid right ~10 studs for elevator)
+        local dXmax  = BW/2 - 13  -- avoid right side
+        local dXmin  = -BW/2 + 8
+        for di, dd in ipairs(dlist) do
+            local dx = dXmin + (di-1)*(dXmax-dXmin)/(math.max(dCount-1,1))
+            if dCount == 1 then dx = (dXmin+dXmax)/2 end
+            local dz = -BD/2 + 11  -- in back area
+
+            local mach = makeBox(Vector3.new(8,7,8), fl(dx,baseY+PAD_H/2+3.5,dz), fth.trim, Enum.Material.SmoothPlastic, floorFolder, "Dropper_F"..floor.."_"..di)
+            mach:SetAttribute("TycoonId",slotId); mach:SetAttribute("FloorId",floor)
+            mach:SetAttribute("DropperId",di); mach:SetAttribute("IsDropper",true)
+            -- Glow top
+            local gTop = makeBox(Vector3.new(7.5,0.45,7.5), fl(dx,baseY+PAD_H/2+7.3,dz), fth.light, Enum.Material.Neon, floorFolder, "DGlow_F"..floor.."_"..di)
+            addLight(gTop,"PointLight",fth.light,10,1.5)
+            -- Conveyor strip
+            makeBox(Vector3.new(7,0.4,10), fl(dx,baseY+PAD_H/2+3,dz+8), Color3.fromRGB(48,48,58), Enum.Material.SmoothPlastic, floorFolder, "Conv_F"..floor.."_"..di)
+            -- Upgrade button on top of machine
+            local upBtn = makeBox(Vector3.new(8,0.55,6), fl(dx,baseY+PAD_H/2+7.5,dz), Color3.fromRGB(28,145,58), Enum.Material.SmoothPlastic, floorFolder, "UpBtn_F"..floor.."_"..di)
+            upBtn:SetAttribute("TycoonId",slotId); upBtn:SetAttribute("FloorId",floor)
+            upBtn:SetAttribute("DropperId",di); upBtn:SetAttribute("IsUpgradeBtn",true)
+            addBB(upBtn, dd.name.."\nLv0  "..numFmt(dd.baseCost).." coins", 200, Color3.new(1,1,1), Color3.fromRGB(8,22,12), 18)
+            local up_pp = Instance.new("ProximityPrompt")
+            up_pp.ActionText="Upgrade"; up_pp.ObjectText=dd.name
+            up_pp.MaxActivationDistance=7; up_pp.RequiresLineOfSight=false; up_pp.Parent=upBtn
+        end
+
+        -- ---- Weapon displays (LEFT wall, evenly spaced along depth) ----
+        local wlist  = GC_WEAPONS[floor]
+        local wZ     = {-BD/2+8, 0, BD/2-8}  -- 3 fixed z positions on left wall
+        for wi, wd in ipairs(wlist) do
+            local wz = wZ[wi] or 0
+            -- Wall mount
+            local wmount = makeBox(Vector3.new(2.5,5.5,7), fl(-BW/2+2.8,baseY+5,wz), fth.trim, Enum.Material.SmoothPlastic, floorFolder, "WMount_F"..floor.."_"..wi)
+            wmount:SetAttribute("TycoonId",slotId); wmount:SetAttribute("FloorId",floor)
+            wmount:SetAttribute("WeaponId",wi); wmount:SetAttribute("IsWeaponMount",true)
+            -- Glow understrip
+            local wglow = makeBox(Vector3.new(2,0.3,6), fl(-BW/2+2.8,baseY+2.5,wz), BULLET_COLORS[floor], Enum.Material.Neon, floorFolder, "WGlow_F"..floor.."_"..wi)
+            addLight(wglow,"PointLight",BULLET_COLORS[floor],7,1.5)
+            -- Buy button (on floor in front of mount)
+            local wBtn = makeBox(Vector3.new(7,0.45,5), fl(-BW/2+9,baseY+PAD_H/2+0.23,wz), Color3.fromRGB(20,95,175), Enum.Material.SmoothPlastic, floorFolder, "WBtn_F"..floor.."_"..wi)
+            wBtn:SetAttribute("TycoonId",slotId); wBtn:SetAttribute("FloorId",floor)
+            wBtn:SetAttribute("WeaponId",wi); wBtn:SetAttribute("IsWeaponBtn",true)
+            addBB(wBtn, wd.name.."\n"..numFmt(wd.cost).." coins", 185, Color3.new(1,1,1), Color3.fromRGB(6,14,26), 16)
+            local w_pp = Instance.new("ProximityPrompt")
+            w_pp.ActionText="Buy / Equip"; w_pp.ObjectText=wd.name
+            w_pp.MaxActivationDistance=6; w_pp.RequiresLineOfSight=false; w_pp.Parent=wBtn
+        end
+
+        -- ---- Elevator pads (front-right area of each floor) ----
+        if floor < 4 then
+            local elevU = makeBox(Vector3.new(6,0.45,6), fl(BW/2-8,baseY+PAD_H/2+0.23,BD/2-8), Color3.fromRGB(255,200,30), Enum.Material.Neon, floorFolder, "ElevUp_F"..floor)
+            elevU:SetAttribute("TycoonId",slotId); elevU:SetAttribute("FloorId",floor); elevU:SetAttribute("IsElevUp",true)
+            pulse(elevU, Color3.fromRGB(255,200,30), Color3.fromRGB(255,255,120), 1.0)
+            addLight(elevU,"PointLight",Color3.fromRGB(255,210,60),14,2)
+            addBB(elevU, "GO UP  F"..(floor+1).." ("..numFmt(GC_FLOOR_COSTS[floor+1])..")", 200, Color3.fromRGB(30,20,0), Color3.fromRGB(255,200,30), 16)
+            local eu_pp = Instance.new("ProximityPrompt")
+            eu_pp.ActionText="Go Up"; eu_pp.ObjectText="Floor "..(floor+1)
+            eu_pp.MaxActivationDistance=7; eu_pp.RequiresLineOfSight=false; eu_pp.Parent=elevU
+        end
+        if floor > 1 then
+            local elevD = makeBox(Vector3.new(5,0.45,5), fl(BW/2-8,baseY+PAD_H/2+0.23,BD/2-15), Color3.fromRGB(80,150,255), Enum.Material.Neon, floorFolder, "ElevDn_F"..floor)
+            elevD:SetAttribute("TycoonId",slotId); elevD:SetAttribute("FloorId",floor); elevD:SetAttribute("IsElevDn",true)
+            pulse(elevD, Color3.fromRGB(80,150,255), Color3.fromRGB(160,210,255), 1.2)
+            addBB(elevD, "GO DOWN  F"..(floor-1), 175, Color3.new(1,1,1), Color3.fromRGB(8,14,28), 14)
+            local ed_pp = Instance.new("ProximityPrompt")
+            ed_pp.ActionText="Go Down"; ed_pp.ObjectText="Floor "..(floor-1)
+            ed_pp.MaxActivationDistance=7; ed_pp.RequiresLineOfSight=false; ed_pp.Parent=elevD
+        end
+
+        -- F4 rooftop tower + faction sign (impressive cap for full build)
+        if floor == 4 then
+            local towerH = 22
+            local twrBase = makeBox(Vector3.new(10,towerH,10), fl(0,baseY+fh+towerH/2,0), fac.primary, Enum.Material.SmoothPlastic, floorFolder, "Tower_F4")
+            local twrCap = makeBox(Vector3.new(12,2,12), fl(0,baseY+fh+towerH+1,0), fac.accent, Enum.Material.Neon, floorFolder, "TowerCap_F4")
+            pulse(twrCap, fac.accent, Color3.fromRGB(255,255,255), 1.1)
+            addLight(twrCap,"SpotLight",fac.accent,80,5)
+
+            -- Rooftop faction sign (MaxDistance 90 so visible from far)
+            local roofSign = makeBox(Vector3.new(BW,5,2), fl(0,baseY+fh+4,BD/2+2), fac.primary, Enum.Material.SmoothPlastic, floorFolder, "RoofSign")
+            addBB(roofSign, faction.name:upper(), 300, fac.accent, fac.primary, 90)
+            local rn = makeBox(Vector3.new(BW-6,0.45,1.2), fl(0,baseY+fh+4,BD/2+3.5), fac.accent, Enum.Material.Neon, floorFolder, "RoofNeon")
+            pulse(rn, fac.accent, Color3.fromRGB(255,255,255), 1.8)
+            addLight(rn,"SpotLight",fac.accent,65,4)
+        end
+
+        -- Hide entire floor folder until revealed by server
+        hideFolder(floorFolder)
+    end
+end
+
+for i, slot in ipairs(SLOTS) do
+    buildTycoon(i, slot, FACTIONS[i])
+end
+
+-- ============================================================
+-- PvP Cover (tactical)
+-- ============================================================
+
+math.randomseed(42)
+local coverLayout = {
+    {Vector3.new(-52,0, 0),  Vector3.new(14,4.5,3),  Color3.fromRGB(65,60,50),  "Barricade"},
+    {Vector3.new( 52,0, 0),  Vector3.new(14,4.5,3),  Color3.fromRGB(65,60,50),  "Barricade"},
+    {Vector3.new(0,0,-52),   Vector3.new(3,4.5,14),  Color3.fromRGB(65,60,50),  "Barricade"},
+    {Vector3.new(0,0, 52),   Vector3.new(3,4.5,14),  Color3.fromRGB(65,60,50),  "Barricade"},
+    {Vector3.new(-82,0,-82), Vector3.new(14,5.5,14), Color3.fromRGB(58,55,45),  "Bunker"},
+    {Vector3.new( 82,0,-82), Vector3.new(14,5.5,14), Color3.fromRGB(58,55,45),  "Bunker"},
+    {Vector3.new(-82,0, 82), Vector3.new(14,5.5,14), Color3.fromRGB(58,55,45),  "Bunker"},
+    {Vector3.new( 82,0, 82), Vector3.new(14,5.5,14), Color3.fromRGB(58,55,45),  "Bunker"},
+    {Vector3.new(-98,0, 0),  Vector3.new(3.5,4,16),  Color3.fromRGB(135,120,85),"Sandbag"},
+    {Vector3.new( 98,0, 0),  Vector3.new(3.5,4,16),  Color3.fromRGB(135,120,85),"Sandbag"},
+    {Vector3.new(0,0,-98),   Vector3.new(16,4,3.5),  Color3.fromRGB(135,120,85),"Sandbag"},
+    {Vector3.new(0,0, 98),   Vector3.new(16,4,3.5),  Color3.fromRGB(135,120,85),"Sandbag"},
+    {Vector3.new(-52,0, 32), Vector3.new(5,7,5),     Color3.fromRGB(48,56,62),  "Crate"},
+    {Vector3.new( 52,0,-32), Vector3.new(5,7,5),     Color3.fromRGB(48,56,62),  "Crate"},
+    {Vector3.new(-32,0,-68), Vector3.new(5,7,5),     Color3.fromRGB(48,56,62),  "Crate"},
+    {Vector3.new( 32,0, 68), Vector3.new(5,7,5),     Color3.fromRGB(48,56,62),  "Crate"},
+    {Vector3.new(-112,0,42), Vector3.new(12,4,3),    Color3.fromRGB(65,60,50),  "Wall"},
+    {Vector3.new( 112,0,-42),Vector3.new(12,4,3),    Color3.fromRGB(65,60,50),  "Wall"},
+}
+for _,cl in ipairs(coverLayout) do
+    local pos=cl[1]; local sz=cl[2]; local col=cl[3]; local nm=cl[4]
+    local yaw = math.random()*0.4-0.2
+    makeBox(sz, CFrame.new(pos)*CFrame.Angles(0,yaw,0)*CFrame.new(0,sz.Y/2,0), col, Enum.Material.SmoothPlastic, covF, nm)
+    -- Amber hazard stripe on tall cover
+    if sz.Y >= 4.5 then
+        makeBox(Vector3.new(sz.X,0.3,0.35), CFrame.new(pos)*CFrame.Angles(0,yaw,0)*CFrame.new(0,sz.Y*0.62,sz.Z/2), AMBER, Enum.Material.SmoothPlastic, covF, "Stripe")
+    end
+end
+
+-- ============================================================
+-- VIP Zone: Center elevated platform
+-- ============================================================
+
+local VT_COL = Color3.fromRGB(180,148,15)
+local VT_TRIM = Color3.fromRGB(255,210,0)
+local VT_PLT  = Color3.fromRGB(38,32,8)
+local VIP_Y = 16  -- height of VIP platform surface
+
+-- Platform
+local vipPlat = makeBox(Vector3.new(52,VIP_Y,52), CFrame.new(0,VIP_Y/2,0), VT_PLT, Enum.Material.SmoothPlastic, vipF, "VIPPlatform")
+addLight(vipPlat,"SpotLight",Color3.fromRGB(255,238,100),100,4)
+-- Polished top
+makeBox(Vector3.new(52,0.5,52), CFrame.new(0,VIP_Y+0.25,0), Color3.fromRGB(28,23,5), Enum.Material.SmoothPlastic, vipF, "VIPFloor")
+
+-- Gold trim neons on all 4 edges
+for _,ed in ipairs({
+    {Vector3.new(52,1,1.4), CFrame.new(0,VIP_Y+0.7,-26.7)},
+    {Vector3.new(52,1,1.4), CFrame.new(0,VIP_Y+0.7, 26.7)},
+    {Vector3.new(1.4,1,52), CFrame.new(-26.7,VIP_Y+0.7,0)},
+    {Vector3.new(1.4,1,52), CFrame.new( 26.7,VIP_Y+0.7,0)},
+}) do
+    local tr = makeBox(ed[1],ed[2],VT_TRIM,Enum.Material.Neon,vipF,"VIPTrim")
+    pulse(tr,VT_TRIM,Color3.fromRGB(255,255,140),1.7)
+end
+
+-- 4 access staircases (N/S/E/W) - each is a wedge ramp
+for _,sd in ipairs({
+    {axis="Z", dir= 1, pos=Vector3.new(0,0, 26)},   -- South
+    {axis="Z", dir=-1, pos=Vector3.new(0,0,-26)},   -- North
+    {axis="X", dir= 1, pos=Vector3.new( 26,0,0)},   -- East
+    {axis="X", dir=-1, pos=Vector3.new(-26,0,0)},   -- West
+}) do
+    -- Ramp: rises VIP_Y over 24 studs depth
+    local rampRise = VIP_Y; local rampRun = 24
+    local rampSz = sd.axis=="Z" and Vector3.new(10, rampRise, rampRun) or Vector3.new(rampRun, rampRise, 10)
+    local rampPos = sd.axis=="Z" and Vector3.new(0,rampRise/2,sd.pos.Z+sd.dir*rampRun/2) or Vector3.new(sd.pos.X+sd.dir*rampRun/2,rampRise/2,0)
+    local angleY  = sd.axis=="Z" and 0 or math.pi/2
+    local angleX  = math.atan2(rampRise, rampRun) * sd.dir * (sd.axis=="Z" and -1 or 1)
+    local wedge = makeWedge(rampSz, CFrame.new(rampPos)*CFrame.Angles(angleX*(sd.axis=="Z" and 1 or 0),angleY,angleX*(sd.axis=="X" and 1 or 0)), VT_COL, Enum.Material.SmoothPlastic, vipF, "VIPRamp")
+end
+
+-- VIP gate: blocks non-VIPs at top of south ramp
+local gate = makeBox(Vector3.new(10,10,1), CFrame.new(0,VIP_Y+5,27), VT_TRIM, Enum.Material.Neon, vipF, "VIPGate")
+gate.Transparency = 0.42; gate:SetAttribute("IsVIPGate",true)
+addBB(gate, "VIP ONLY - Step up to buy", 220, Color3.fromRGB(255,215,0), Color3.fromRGB(18,14,0), 30)
+
+-- Crown pedestal (center of platform)
+local crownPed = makeBox(Vector3.new(7,2,7), CFrame.new(0,VIP_Y+1,0), VT_TRIM, Enum.Material.Neon, vipF, "CrownPedestal")
+crownPed:SetAttribute("IsCrownPed",true)
+addBB(crownPed,"CLAIM CROWN (VIP Only)",200,Color3.fromRGB(255,215,0),Color3.fromRGB(18,14,0),22)
+addLight(crownPed,"PointLight",Color3.fromRGB(255,235,100),20,3)
+local cp2=Instance.new("ProximityPrompt"); cp2.ActionText="Claim Crown"; cp2.ObjectText="VIP"; cp2.MaxActivationDistance=7; cp2.RequiresLineOfSight=false; cp2.Parent=crownPed
+
+-- VIP purchase pad (at base of south ramp, on ground)
+local vPad = makeBox(Vector3.new(16,1,16), CFrame.new(0,0.5,56), VT_TRIM, Enum.Material.Neon, vipF, "VIPPurchasePad")
+vPad:SetAttribute("IsVIPPad",true)
+addBB(vPad,"STEP HERE: BUY VIP\n499 Robux",250,Color3.fromRGB(255,215,0),Color3.fromRGB(20,16,0),28)
+pulse(vPad, VT_TRIM, Color3.fromRGB(255,255,100),1.1)
+addLight(vPad,"PointLight",Color3.fromRGB(255,225,80),20,2.5)
+local pp_vip=Instance.new("ProximityPrompt"); pp_vip.ActionText="Buy VIP (499 R$)"; pp_vip.ObjectText="VIP Gamepass"; pp_vip.MaxActivationDistance=10; pp_vip.RequiresLineOfSight=false; pp_vip.Parent=vPad
+
+-- VIP display stands (on platform)
+for wi=-1,1 do
+    local stand=makeBox(Vector3.new(4,11,2),CFrame.new(wi*16,VIP_Y+5.5,-18),VT_COL,Enum.Material.SmoothPlastic,vipF,"VIPDisplay")
+    local dg=makeBox(Vector3.new(3.5,0.4,1.8),CFrame.new(wi*16,VIP_Y+11.2,-18),VT_TRIM,Enum.Material.Neon,vipF,"VIPDisplayGlow")
+    addLight(dg,"PointLight",Color3.fromRGB(255,235,100),12,2)
+end
+
+-- ============================================================
+-- Owner door (south wall area)
+-- ============================================================
+
+local ownerDoor = makeBox(Vector3.new(DOOR_W-2,18,2), CFrame.new(0,9,hz+wT/2), Color3.fromRGB(28,195,78), Enum.Material.Neon, ownF, "OwnerDoor")
+ownerDoor.Transparency=0.35; ownerDoor:SetAttribute("IsOwnerDoor",true)
+addLight(ownerDoor,"PointLight",Color3.fromRGB(60,255,110),18,2.5)
+for _,fr in ipairs({
+    {Vector3.new(2,22,wT+2), CFrame.new(-DOOR_W/2,11,hz+wT/2)},
+    {Vector3.new(2,22,wT+2), CFrame.new( DOOR_W/2,11,hz+wT/2)},
+    {Vector3.new(DOOR_W+4,3,wT+2), CFrame.new(0,21.5,hz+wT/2)},
+}) do makeBox(fr[1],fr[2],Color3.fromRGB(20,20,26),Enum.Material.SmoothPlastic,ownF,"DFrame") end
+
+local keypad=makeBox(Vector3.new(4,6,2.5),CFrame.new(-8,7,hz+wT/2-wT/2-1.5),Color3.fromRGB(18,18,26),Enum.Material.SmoothPlastic,ownF,"OwnerKeypad")
+keypad:SetAttribute("IsOwnerKeypad",true)
+addBB(keypad,"OWNER ACCESS",155,Color3.fromRGB(80,255,120),Color3.fromRGB(5,12,6),12)
+addLight(keypad,"PointLight",Color3.fromRGB(55,255,100),7,1.8)
+local kpp=Instance.new("ProximityPrompt"); kpp.ActionText="Access"; kpp.ObjectText="Staff Only"; kpp.MaxActivationDistance=8; kpp.RequiresLineOfSight=false; kpp.Parent=keypad
+
+local rmPos=Vector3.new(0,10,hz+wT+20)
+makeBox(Vector3.new(40,20,34),CFrame.new(rmPos.X,rmPos.Y,rmPos.Z),Color3.fromRGB(16,16,22),Enum.Material.SmoothPlastic,ownF,"OwnerRoomHull")
+local rmL=makeBox(Vector3.new(7,0.4,7),CFrame.new(rmPos.X,rmPos.Y+9.8,rmPos.Z),Color3.fromRGB(120,255,160),Enum.Material.Neon,ownF,"RmLight")
+addLight(rmL,"PointLight",Color3.fromRGB(100,255,140),28,2.5)
+local exitPad=makeBox(Vector3.new(4,6,2.5),CFrame.new(rmPos.X+8,rmPos.Y-4,rmPos.Z-15.5),Color3.fromRGB(18,18,26),Enum.Material.SmoothPlastic,ownF,"OwnerExitPad")
+exitPad:SetAttribute("IsOwnerExit",true)
+addBB(exitPad,"EXIT",95,Color3.fromRGB(255,100,80),Color3.fromRGB(14,5,5),12)
+local epp=Instance.new("ProximityPrompt"); epp.ActionText="Exit"; epp.ObjectText=""; epp.MaxActivationDistance=7; epp.RequiresLineOfSight=false; epp.Parent=exitPad
+
+-- ============================================================
+-- Leaderboard (south wall interior face)
+-- ============================================================
+
+local lbPart=makeBox(Vector3.new(68,52,3),CFrame.new(0,28,-(hz-8)),Color3.fromRGB(10,10,16),Enum.Material.SmoothPlastic,mapF,"LeaderboardBoard")
+lbPart:SetAttribute("IsLeaderboard",true)
+makeBox(Vector3.new(72,56,1),CFrame.new(0,28,-(hz-7.5)),AMBER,Enum.Material.Neon,mapF,"LBFrame").Transparency=0.52
+addLight(lbPart,"SpotLight",Color3.fromRGB(255,200,45),38,2.5)
+local sg=Instance.new("SurfaceGui"); sg.SizingMode=Enum.SurfaceGuiSizingMode.FixedSize; sg.CanvasSize=Vector2.new(680,520); sg.Face=Enum.NormalId.Front; sg.Name="LBSurface"; sg.Parent=lbPart
+local lbT=Instance.new("TextLabel",sg); lbT.Name="Title"; lbT.Size=UDim2.new(1,0,0.12,0); lbT.BackgroundTransparency=1; lbT.TextColor3=Color3.fromRGB(255,200,40); lbT.Font=Enum.Font.GothamBold; lbT.Text="TOP EARNERS"; lbT.TextScaled=true
+local lbEnt=Instance.new("Frame",sg); lbEnt.Name="Entries"; lbEnt.Size=UDim2.new(1,-14,0.88,0); lbEnt.Position=UDim2.new(0,7,0.12,0); lbEnt.BackgroundTransparency=1
+for r=1,10 do
+    local e=Instance.new("TextLabel",lbEnt); e.Name="R"..r
+    e.Size=UDim2.new(1,0,0.1,-3); e.Position=UDim2.new(0,0,(r-1)*0.1,0)
+    e.BackgroundColor3=r<=3 and Color3.fromRGB(36,32,5) or Color3.fromRGB(14,14,20); e.BackgroundTransparency=0.2
+    e.TextColor3=r==1 and Color3.fromRGB(255,215,0) or r==2 and Color3.fromRGB(198,198,198) or r==3 and Color3.fromRGB(172,100,38) or Color3.fromRGB(188,188,192)
+    e.Font=Enum.Font.GothamBold; e.Text="#"..r.."  --"; e.TextScaled=true
+    Instance.new("UICorner",e).CornerRadius=UDim.new(0.18,0)
+end
+
+-- ============================================================
+-- Spawn (center ground, under VIP platform)
+-- ============================================================
+
+local spPlat=makeBox(Vector3.new(32,3,32),CFrame.new(0,1.5,0),Color3.fromRGB(40,40,48),Enum.Material.Concrete,mapF,"SpawnPad")
+for _,sd in ipairs({ {Vector3.new(32,0.4,1),CFrame.new(0,3.2,-15.5)},{Vector3.new(32,0.4,1),CFrame.new(0,3.2,15.5)},{Vector3.new(1,0.4,32),CFrame.new(-15.5,3.2,0)},{Vector3.new(1,0.4,32),CFrame.new(15.5,3.2,0)} }) do
+    local s=makeBox(sd[1],sd[2],AMBER,Enum.Material.Neon,mapF,"SpawnBorder"); pulse(s,AMBER,Color3.fromRGB(255,200,80),2.4)
+end
+local spg=makeBox(Vector3.new(3,0.4,3),CFrame.new(0,3.2,0),Color3.fromRGB(90,255,130),Enum.Material.Neon,mapF,"SpawnGlow")
+addLight(spg,"PointLight",Color3.fromRGB(90,255,130),22,2.2)
+addBB(spPlat,"SPAWN",150,Color3.fromRGB(180,255,190),Color3.fromRGB(12,16,14),28)
+
+-- ============================================================
+-- Atmosphere
+-- ============================================================
+
+local lighting=game:GetService("Lighting")
+lighting.Brightness=1.55; lighting.ClockTime=15; lighting.FogEnd=850
+lighting.FogColor=Color3.fromRGB(24,24,32); lighting.Ambient=Color3.fromRGB(82,82,98); lighting.OutdoorAmbient=Color3.fromRGB(102,100,115); lighting.ShadowSoftness=0.22
+
+local atmo=Instance.new("Atmosphere",lighting); atmo.Density=0.2; atmo.Offset=0.12; atmo.Haze=0.32; atmo.Color=Color3.fromRGB(105,115,152); atmo.Glare=0.15; atmo.Decay=Color3.fromRGB(75,75,102)
+local bloom=Instance.new("BloomEffect",lighting); bloom.Intensity=0.42; bloom.Size=22; bloom.Threshold=0.94
+
+print("[MapBuilder] Iron Arsenal v3 ready - "..#tycF:GetChildren().." tycoon slots")
