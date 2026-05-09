@@ -83,11 +83,11 @@ local PLOT_CENTERS_CLIENT = {
 
 -- ── PLOT FRIENDLY NAMES ──────────────────────────────────
 local PLOT_NAMES = {
-    L_N="💸 Coin Printer", R_N="🤖 Roomba", L_S="🏭 Factory", R_S="🏦 Vault",
-    LL_M="🧲 Magnet", RR_M="⚗️ Alchemy Cauldron", C_NN="🎰 Slot Machine", C_SS="⚡ Tesla Coil",
-    LL_N="🔭 Observatory", LL_S="☢️ Reactor", RR_N="🚀 Rocket Silo", RR_S="💎 Crystal Forge",
-    L_NN="⏰ Clock Engine", R_NN="🌊 Wave Condenser", L_SS="🧬 DNA Tower", R_SS="💣 Coin Cannon",
-    LL_NN="⛏️ Mining Rig", RR_NN="🌋 Lava Core", LL_SS="🔮 Arcane Spire", RR_SS="🛸 UFO",
+    L_N="🧲 Magnet",          R_N="⚗️ Alchemy Cauldron", L_S="🎰 Slot Machine",   R_S="💸 Coin Printer",
+    LL_M="🤖 Roomba",         RR_M="⚡ Tesla Coil",       C_NN="🔭 Observatory",   C_SS="☢️ Reactor",
+    LL_N="🏭 Factory",        LL_S="🚀 Rocket Silo",      RR_N="💎 Crystal Forge", RR_S="⏰ Clock Engine",
+    L_NN="🌊 Wave Condenser", R_NN="🧬 DNA Tower",        L_SS="💣 Coin Cannon",   R_SS="⛏️ Mining Rig",
+    LL_NN="🏦 Vault",         RR_NN="🌋 Lava Core",       LL_SS="🔮 Arcane Spire", RR_SS="🛸 UFO",
 }
 
 -- ── state ────────────────────────────────────────────────
@@ -171,7 +171,7 @@ Instance.new("UICorner", pBarFill).CornerRadius = UDim.new(1,0)
 
 -- ── SWORD COOLDOWN INDICATOR (below HUD) ────────────────
 local swordBar = Instance.new("Frame", sg)
-swordBar.Size = UDim2.new(0, 200, 0, 22); swordBar.Position = UDim2.new(0, 10, 1, -235)
+swordBar.Size = UDim2.new(0, 200, 0, 22); swordBar.Position = UDim2.new(0, 10, 1, -225)
 swordBar.BackgroundColor3 = Color3.fromRGB(20, 8, 8); swordBar.BorderSizePixel = 0
 swordBar.Visible = false
 Instance.new("UICorner", swordBar).CornerRadius = UDim.new(0, 6)
@@ -658,11 +658,10 @@ coinsLostLbl.BackgroundTransparency = 1; coinsLostLbl.Text = ""
 coinsLostLbl.TextColor3 = Color3.fromRGB(255,180,50); coinsLostLbl.Font = Enum.Font.GothamBold
 coinsLostLbl.TextSize = 17; coinsLostLbl.TextXAlignment = Enum.TextXAlignment.Center; coinsLostLbl.ZIndex = 101
 
-RE_PlayerDied.OnClientEvent:Connect(function(isMe, killerName, coinsLost)
-    if not isMe then return end
+RE_PlayerDied.OnClientEvent:Connect(function(killerName, coinsLost)
     coinsLostLbl.Text = killerName
-        and ("💸 " .. killerName .. " took " .. fmt(coinsLost) .. " coins from you!")
-        or  ("💸 You dropped " .. fmt(coinsLost) .. " coins!")
+        and ("💸 " .. killerName .. " took " .. fmt(coinsLost or 0) .. " coins from you!")
+        or  ("💸 You dropped " .. fmt(coinsLost or 0) .. " coins!")
     deathScreen.Visible = true
     TweenService:Create(hpFill, TweenInfo.new(0.2), {Size = UDim2.new(0,0,1,0)}):Play()
     hpLbl.Text = "❤️ 0 / 100"
@@ -893,10 +892,10 @@ end)
 -- ── WEAPON SHOP PANEL ─────────────────────────────────────
 -- prestigeReq must match server WEAPONS table exactly
 local WEAPONS_CLIENT = {
-    {id="CoinBlade",     name="⚔️ Coin Blade",     desc="Classic melee sword.",             cost=0,       prestigeReq=0, col=Color3.fromRGB(255,215,0)},
-    {id="LaserStaff",    name="🔮 Laser Staff",    desc="Long-range precision bolt.",        cost=20000,   prestigeReq=0, col=Color3.fromRGB(80,160,255)},
-    {id="ThunderHammer", name="🔨 Thunder Hammer", desc="Shockwave hits ALL nearby enemies!",cost=300000,  prestigeReq=2, col=Color3.fromRGB(255,255,60)},
-    {id="ShadowBlade",   name="🌑 Shadow Blade",   desc="Fast dark blade, lethal damage.",   cost=2000000, prestigeReq=4, col=Color3.fromRGB(160,40,255)},
+    {id="CoinBlade",     name="⚔️ Coin Blade",     desc="Classic melee sword.",             cost=0,        col=Color3.fromRGB(255,215,0)},
+    {id="LaserStaff",    name="🔮 Laser Staff",    desc="Long-range precision bolt.",        cost=20000,    col=Color3.fromRGB(80,160,255)},
+    {id="ThunderHammer", name="🔨 Thunder Hammer", desc="Shockwave hits ALL nearby enemies!",cost=1500000,  col=Color3.fromRGB(255,255,60)},
+    {id="ShadowBlade",   name="🌑 Shadow Blade",   desc="Fast dark blade, lethal damage.",   cost=10000000, col=Color3.fromRGB(160,40,255)},
 }
 local WEAPON_UPGRADE_COSTS_CLIENT = {15000, 80000, 350000, 1500000}
 
@@ -933,7 +932,6 @@ local function buildWeaponShop(ownedWeapons, weaponLevels, equippedWeapon, coins
     for _, c in ipairs(wpScroll:GetChildren()) do
         if c:IsA("Frame") then c:Destroy() end
     end
-    local playerRebirths = (currentData and currentData.rebirths) or 0
     local total = 0
     for _, w in ipairs(WEAPONS_CLIENT) do
         local owned    = ownedWeapons and ownedWeapons[w.id]
@@ -942,59 +940,38 @@ local function buildWeaponShop(ownedWeapons, weaponLevels, equippedWeapon, coins
         local upgIdx   = math.min(level, #WEAPON_UPGRADE_COSTS_CLIENT)
         local upgCost  = WEAPON_UPGRADE_COSTS_CLIENT[upgIdx]
         local maxed    = level >= 5
-        local req      = w.prestigeReq or 0
-        local locked   = (not owned) and (playerRebirths < req)  -- prestige gate
 
-        local cardH = locked and 106 or 96
         local card = Instance.new("Frame", wpScroll)
-        card.Size = UDim2.new(1,0,0,cardH)
-        card.BackgroundColor3 = locked and Color3.fromRGB(10,10,18) or Color3.fromRGB(16,16,32)
+        card.Size = UDim2.new(1,0,0,96)
+        card.BackgroundColor3 = Color3.fromRGB(16,16,32)
         card.BorderSizePixel = 0
         Instance.new("UICorner", card).CornerRadius = UDim.new(0,10)
         local cs = Instance.new("UIStroke", card)
-        if locked then
-            cs.Color = Color3.fromRGB(80,30,30); cs.Thickness = 1.2
-        else
-            cs.Color = equipped and w.col or (owned and Color3.fromRGB(60,60,90) or Color3.fromRGB(35,35,55))
-            cs.Thickness = equipped and 2.5 or 1.2
-        end
+        cs.Color = equipped and w.col or (owned and Color3.fromRGB(60,60,90) or Color3.fromRGB(35,35,55))
+        cs.Thickness = equipped and 2.5 or 1.2
 
-        local nameCol = locked and Color3.fromRGB(100,80,80) or w.col
         local nm = Instance.new("TextLabel", card); nm.Size = UDim2.new(0.6,0,0,26)
         nm.Position = UDim2.new(0,10,0,6); nm.BackgroundTransparency = 1
-        nm.Text = (locked and "🔒 " or "") .. w.name
-        nm.TextColor3 = nameCol; nm.Font = Enum.Font.GothamBold; nm.TextSize = 15
+        nm.Text = w.name
+        nm.TextColor3 = w.col; nm.Font = Enum.Font.GothamBold; nm.TextSize = 15
         nm.TextXAlignment = Enum.TextXAlignment.Left
 
         local dsc = Instance.new("TextLabel", card); dsc.Size = UDim2.new(0.6,0,0,18)
         dsc.Position = UDim2.new(0,10,0,30); dsc.BackgroundTransparency = 1
         dsc.Text = w.desc
-        dsc.TextColor3 = locked and Color3.fromRGB(90,80,80) or Color3.fromRGB(140,140,170)
+        dsc.TextColor3 = Color3.fromRGB(140,140,170)
         dsc.Font = Enum.Font.Gotham; dsc.TextSize = 11
         dsc.TextXAlignment = Enum.TextXAlignment.Left
 
-        local statusRow = owned and ("Lv " .. level .. " / 5" .. (maxed and " MAX" or ""))
-            or locked and ("🔒 Requires " .. req .. " prestige" .. (req == 1 and "" or "s"))
-            or "Not owned"
+        local statusRow = owned and ("Lv " .. level .. " / 5" .. (maxed and " MAX" or "")) or "Not owned"
         local lvl = Instance.new("TextLabel", card); lvl.Size = UDim2.new(0.6,0,0,18)
         lvl.Position = UDim2.new(0,10,0,50); lvl.BackgroundTransparency = 1
         lvl.Text = statusRow
-        lvl.TextColor3 = owned and Color3.fromRGB(255,200,0)
-            or locked and Color3.fromRGB(180,80,80)
-            or Color3.fromRGB(100,100,120)
+        lvl.TextColor3 = owned and Color3.fromRGB(255,200,0) or Color3.fromRGB(100,100,120)
         lvl.Font = Enum.Font.GothamBold; lvl.TextSize = 12; lvl.TextXAlignment = Enum.TextXAlignment.Left
 
-        -- Progress indicator for locked weapons
-        if locked then
-            local progLbl = Instance.new("TextLabel", card); progLbl.Size = UDim2.new(0.6,0,0,14)
-            progLbl.Position = UDim2.new(0,10,0,68); progLbl.BackgroundTransparency = 1
-            progLbl.Text = "Your prestiges: " .. playerRebirths .. " / " .. req
-            progLbl.TextColor3 = Color3.fromRGB(130,100,100); progLbl.Font = Enum.Font.Gotham; progLbl.TextSize = 10
-            progLbl.TextXAlignment = Enum.TextXAlignment.Left
-        end
-
         local equippedTag = Instance.new("TextLabel", card); equippedTag.Size = UDim2.new(0.6,0,0,16)
-        equippedTag.Position = UDim2.new(0,10,0,locked and 84 or 70); equippedTag.BackgroundTransparency = 1
+        equippedTag.Position = UDim2.new(0,10,0,70); equippedTag.BackgroundTransparency = 1
         equippedTag.Text = equipped and "✓ EQUIPPED" or ""
         equippedTag.TextColor3 = w.col; equippedTag.Font = Enum.Font.GothamBold; equippedTag.TextSize = 11
         equippedTag.TextXAlignment = Enum.TextXAlignment.Left
@@ -1003,12 +980,7 @@ local function buildWeaponShop(ownedWeapons, weaponLevels, equippedWeapon, coins
         btn.Position = UDim2.new(1,-112,0.5,-19)
         Instance.new("UICorner", btn).CornerRadius = UDim.new(0,8)
 
-        if locked then
-            btn.BackgroundColor3 = Color3.fromRGB(35,20,20)
-            btn.Text = "🔒 P" .. req .. " Req"
-            btn.TextColor3 = Color3.fromRGB(150,80,80); btn.Font = Enum.Font.GothamBold; btn.TextSize = 11
-            btn.Active = false
-        elseif not owned then
+        if not owned then
             btn.BackgroundColor3 = coins >= w.cost and Color3.fromRGB(80,20,120) or Color3.fromRGB(40,30,50)
             btn.Text = w.cost == 0 and "FREE" or ("💰 " .. fmt(w.cost))
             btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 12
@@ -1029,7 +1001,7 @@ local function buildWeaponShop(ownedWeapons, weaponLevels, equippedWeapon, coins
             btn.Text = "Equip"; btn.TextColor3 = Color3.new(1,1,1); btn.Font = Enum.Font.GothamBold; btn.TextSize = 13
             btn.MouseButton1Click:Connect(function() RE_WeaponShop:FireServer(w.id, "equip") end)
         end
-        total = total + cardH + 8
+        total = total + 96 + 8
     end
     wpScroll.CanvasSize = UDim2.new(0,0,0,total)
 end
@@ -1052,10 +1024,10 @@ end
 
 -- ── BUILDING UPGRADE PANEL ────────────────────────────────
 local PATHS = {
-    A={name="⚡ Production", desc="More coins per tick",  col=Color3.fromRGB(255,200,0),  costs={500,2500,10000,30000},   labels={"1.5×","2.0×","3.0×","5.0×"}},
-    B={name="⏱️ Efficiency",  desc="Faster tick interval", col=Color3.fromRGB(80,220,255),  costs={750,3500,12000,35000},   labels={"-1s","-2s","-3s","-5s"}},
-    C={name="🛡️ Defense",     desc="Raid protection",      col=Color3.fromRGB(255,80,200),  costs={1000,6000,20000,50000},  labels={"8s harder","8min shield","Earn while defending","Golden: 3×"}},
-    D={name="🔰 Auto-Shield", desc="Blocks 1 raid / 4min", col=Color3.fromRGB(80,255,180),  costs={8000000},                labels={"Auto-Shield every 4min"}},
+    A={name="⚡ Production", desc="More coins per tick",  col=Color3.fromRGB(255,200,0),  costs={2000,15000,75000,350000},  labels={"1.5×","2.0×","3.0×","5.0×"}},
+    B={name="⏱️ Efficiency",  desc="Faster tick interval", col=Color3.fromRGB(80,220,255),  costs={3000,20000,100000,500000}, labels={"-1s","-2s","-3s","-5s"}},
+    C={name="🛡️ Defense",     desc="Raid protection",      col=Color3.fromRGB(255,80,200),  costs={5000,30000,150000,700000}, labels={"8s harder","8min shield","Earn while defending","Golden: 3×"}},
+    D={name="🔰 Auto-Shield", desc="Blocks 1 raid / 4min", col=Color3.fromRGB(80,255,180),  costs={8000000},                  labels={"Auto-Shield every 4min"}},
 }
 
 local buildPanel = Instance.new("Frame", sg)
@@ -1393,6 +1365,8 @@ local function buildShop(data,upgrades)
         elseif upg.key=="coinValue" then
             local mult = 1 + level*0.5
             effectText = string.format("Value: %.1fx", mult)
+        elseif upg.key=="offlineVault" then
+            effectText = level > 0 and ("Saves up to "..level.."h offline") or "No offline earning yet"
         else effectText = "" end
 
         local ef=Instance.new("TextLabel",card); ef.Size=UDim2.new(0,195,0,14)
@@ -1441,7 +1415,7 @@ local function openShop()
 end
 
 -- ── DAILY REWARD ─────────────────────────────────────────
-local DAILY_REWARDS_CLIENT = {100, 200, 350, 500, 750, 1000, 2500}
+local DAILY_REWARDS_CLIENT = {2000, 5000, 12000, 30000, 80000, 200000, 750000}
 
 local function openDaily()
     local old2 = sg:FindFirstChild("DailyPanel")
@@ -1513,8 +1487,9 @@ local function openPrestige()
     if old2 then old2:Destroy() return end
 
     local rebirths = (currentData and currentData.rebirths) or 0
-    -- Cost: 100000 × 3^rebirths — matches server formula
-    local cost     = math.floor(100000 * (3 ^ rebirths))
+    local gp       = (currentData and currentData._gp) or {}
+    -- Cost: 100000 × 3^rebirths — matches server formula; Prestige Boost pass = -20%
+    local cost     = math.floor(100000 * (3 ^ rebirths) * (gp.prestigeBoost and 0.8 or 1))
     local coins    = (currentData and currentData.coins) or 0
     local canDo    = coins >= cost
     local multStr  = "2x"
@@ -1560,7 +1535,8 @@ local function openPrestige()
         .."Each prestige gives a permanent "..multStr.." income multiplier.\n"
         .."You also KEEP 25%% of all your upgrade levels!\n\n"
         .."Income now:  ×"..curPow.."  →  After prestige:  ×"..nextPow.."\n"
-        .."Cost: 💰 "..fmt(cost).."    You have: 💰 "..fmt(coins)
+        .."Cost: 💰 "..fmt(cost)..(gp.prestigeBoost and "  (🔥 -20%% Boost!)" or "")
+        .."    You have: 💰 "..fmt(coins)
         ..upgStr
     info.TextColor3=Color3.fromRGB(180,180,200); info.Font=Enum.Font.Gotham; info.TextSize=13
     info.TextWrapped=true; info.TextXAlignment=Enum.TextXAlignment.Left
@@ -1601,12 +1577,6 @@ local function openPrestige()
 end
 
 -- ── ROBUX SHOP ───────────────────────────────────────────
-local PRODUCTS={
-    {id=3586040050,label="💰 500 Coins",    price="R$50"},
-    {id=3586040263,label="💰 2,500 Coins",  price="R$199"},
-    {id=3586040422,label="💰 10,000 Coins", price="R$699"},
-}
-
 local function openRobuxShop()
     local old2=sg:FindFirstChild("RobuxShop")
     if old2 then old2:Destroy() return end
@@ -1614,43 +1584,16 @@ local function openRobuxShop()
     local ownedGP = (currentData and currentData._gp) or {}
 
     local panel=Instance.new("Frame",sg); panel.Name="RobuxShop"
+    panel.Size=UDim2.new(0,420,0,540)
+    panel.Position=UDim2.new(0.5,-210,0.5,-270)
     panel.BackgroundColor3=Color3.fromRGB(8,8,22); panel.BorderSizePixel=0
     Instance.new("UICorner",panel).CornerRadius=UDim.new(0,14)
     local rs=Instance.new("UIStroke",panel); rs.Color=Color3.fromRGB(55,140,255); rs.Thickness=2
 
-    local y=56
-    local function row(lbl, price, cb, bgCol, priceCol)
-        local r=Instance.new("TextButton",panel); r.Size=UDim2.new(1,-20,0,50)
-        r.Position=UDim2.new(0,10,0,y); r.BackgroundColor3=bgCol; r.Text=""; r.BorderSizePixel=0
-        Instance.new("UICorner",r).CornerRadius=UDim.new(0,10)
-        local l=Instance.new("TextLabel",r); l.Size=UDim2.new(0.65,0,1,0)
-        l.Position=UDim2.new(0,10,0,0); l.BackgroundTransparency=1; l.Text=lbl
-        l.TextColor3=Color3.new(1,1,1); l.Font=Enum.Font.GothamBold; l.TextSize=13
-        l.TextXAlignment=Enum.TextXAlignment.Left; l.TextWrapped=false
-        local p=Instance.new("TextLabel",r); p.Size=UDim2.new(0.32,0,1,0)
-        p.Position=UDim2.new(0.67,0,0,0); p.BackgroundTransparency=1; p.Text=price
-        p.TextColor3=priceCol or Color3.fromRGB(255,215,0)
-        p.Font=Enum.Font.GothamBold; p.TextSize=15
-        p.TextXAlignment=Enum.TextXAlignment.Right
-        r.MouseButton1Click:Connect(cb); y=y+58
-    end
-
-    local function sec(text)
-        local s=Instance.new("TextLabel",panel); s.Size=UDim2.new(1,-20,0,22)
-        s.Position=UDim2.new(0,10,0,y); s.BackgroundTransparency=1; s.Text=text
-        s.TextColor3=Color3.fromRGB(150,150,170); s.Font=Enum.Font.GothamBold; s.TextSize=12
-        s.TextXAlignment=Enum.TextXAlignment.Left; y=y+26
-    end
-
-    sec("COIN PACKS")
-    for _,p in ipairs(PRODUCTS) do
-        local pid=p.id
-        row(p.label, p.price,
-            function() MarketplaceService:PromptProductPurchase(player,pid) end,
-            Color3.fromRGB(16,48,16), nil)
-    end
-
-    panel.Size=UDim2.new(0,400,0,y+12); panel.Position=UDim2.new(0.5,-200,0.5,-(y+12)/2)
+    local t2=Instance.new("TextLabel",panel); t2.Size=UDim2.new(1,-50,0,44)
+    t2.Position=UDim2.new(0,12,0,4); t2.BackgroundTransparency=1
+    t2.Text="💎 ROBUX SHOP"; t2.TextColor3=Color3.fromRGB(90,170,255)
+    t2.Font=Enum.Font.GothamBold; t2.TextSize=22; t2.TextXAlignment=Enum.TextXAlignment.Left
 
     local cl=Instance.new("TextButton",panel); cl.Size=UDim2.new(0,32,0,32)
     cl.Position=UDim2.new(1,-40,0,8); cl.BackgroundColor3=Color3.fromRGB(160,25,25)
@@ -1658,10 +1601,100 @@ local function openRobuxShop()
     Instance.new("UICorner",cl).CornerRadius=UDim.new(0,8)
     cl.MouseButton1Click:Connect(function() panel:Destroy() end)
 
-    local t2=Instance.new("TextLabel",panel); t2.Size=UDim2.new(1,-50,0,44)
-    t2.Position=UDim2.new(0,12,0,4); t2.BackgroundTransparency=1
-    t2.Text="💎 ROBUX SHOP"; t2.TextColor3=Color3.fromRGB(90,170,255)
-    t2.Font=Enum.Font.GothamBold; t2.TextSize=22; t2.TextXAlignment=Enum.TextXAlignment.Left
+    local scr=Instance.new("ScrollingFrame",panel)
+    scr.Size=UDim2.new(1,-16,1,-56); scr.Position=UDim2.new(0,8,0,52)
+    scr.BackgroundTransparency=1; scr.ScrollBarThickness=4
+    scr.ScrollBarImageColor3=Color3.fromRGB(55,140,255)
+    scr.BorderSizePixel=0; scr.CanvasSize=UDim2.new(0,0,0,0)
+
+    local y=0
+    local function row(lbl, price, cb, bgCol, priceCol)
+        local r=Instance.new("TextButton",scr); r.Size=UDim2.new(1,-4,0,50)
+        r.Position=UDim2.new(0,2,0,y); r.BackgroundColor3=bgCol; r.Text=""; r.BorderSizePixel=0
+        Instance.new("UICorner",r).CornerRadius=UDim.new(0,10)
+        local l=Instance.new("TextLabel",r); l.Size=UDim2.new(0.6,0,1,0)
+        l.Position=UDim2.new(0,10,0,0); l.BackgroundTransparency=1; l.Text=lbl
+        l.TextColor3=Color3.new(1,1,1); l.Font=Enum.Font.GothamBold; l.TextSize=13
+        l.TextXAlignment=Enum.TextXAlignment.Left; l.TextWrapped=true
+        local p=Instance.new("TextLabel",r); p.Size=UDim2.new(0.38,0,1,0)
+        p.Position=UDim2.new(0.6,0,0,0); p.BackgroundTransparency=1; p.Text=price
+        p.TextColor3=priceCol or Color3.fromRGB(255,215,0)
+        p.Font=Enum.Font.GothamBold; p.TextSize=13
+        p.TextXAlignment=Enum.TextXAlignment.Right; p.TextWrapped=true
+        r.MouseButton1Click:Connect(cb); y=y+56
+    end
+
+    local function sec(text)
+        local s=Instance.new("TextLabel",scr); s.Size=UDim2.new(1,-4,0,22)
+        s.Position=UDim2.new(0,2,0,y); s.BackgroundTransparency=1; s.Text=text
+        s.TextColor3=Color3.fromRGB(140,140,170); s.Font=Enum.Font.GothamBold; s.TextSize=11
+        s.TextXAlignment=Enum.TextXAlignment.Left; y=y+28
+    end
+
+    -- Coin packs
+    sec("── COIN PACKS ──────────────────")
+    local COIN_PACKS = {
+        {id=3586040050, label="💰 5,000 Coins",    price="R$99"},
+        {id=3586040263, label="💰 25,000 Coins",   price="R$299"},
+        {id=3586040422, label="💰 75,000 Coins",   price="R$699"},
+        {id=3586040561, label="🔄 Reset Upgrades", price="R$49"},
+    }
+    for _,p in ipairs(COIN_PACKS) do
+        local pid=p.id
+        row(p.label, p.price,
+            function() MarketplaceService:PromptProductPurchase(player,pid) end,
+            Color3.fromRGB(14,44,14), nil)
+    end
+
+    local function gpRow(lbl, desc, price, cb, bgCol, priceCol)
+        local r=Instance.new("TextButton",scr); r.Size=UDim2.new(1,-4,0,68)
+        r.Position=UDim2.new(0,2,0,y); r.BackgroundColor3=bgCol; r.Text=""; r.BorderSizePixel=0
+        Instance.new("UICorner",r).CornerRadius=UDim.new(0,10)
+        local l=Instance.new("TextLabel",r); l.Size=UDim2.new(0.62,0,0,28)
+        l.Position=UDim2.new(0,10,0,4); l.BackgroundTransparency=1; l.Text=lbl
+        l.TextColor3=Color3.new(1,1,1); l.Font=Enum.Font.GothamBold; l.TextSize=13
+        l.TextXAlignment=Enum.TextXAlignment.Left
+        local p=Instance.new("TextLabel",r); p.Size=UDim2.new(0.36,0,0,28)
+        p.Position=UDim2.new(0.62,0,0,4); p.BackgroundTransparency=1; p.Text=price
+        p.TextColor3=priceCol or Color3.fromRGB(255,215,0)
+        p.Font=Enum.Font.GothamBold; p.TextSize=13
+        p.TextXAlignment=Enum.TextXAlignment.Right
+        local d=Instance.new("TextLabel",r); d.Size=UDim2.new(1,-16,0,30)
+        d.Position=UDim2.new(0,10,0,34); d.BackgroundTransparency=1; d.Text=desc
+        d.TextColor3=Color3.fromRGB(125,125,158); d.Font=Enum.Font.Gotham; d.TextSize=11
+        d.TextXAlignment=Enum.TextXAlignment.Left; d.TextWrapped=true
+        r.MouseButton1Click:Connect(cb); y=y+76
+    end
+
+    -- Gamepasses
+    y=y+6
+    sec("── GAMEPASSES (permanent!) ─────")
+    local GAMEPASSES_LIST = {
+        {id=1821720069, label="⭐ VIP",           price="R$499", key="doubleCoin",
+         desc="2× coins from everything in the game — machines, geysers, kills. Stacks with all other bonuses. Best value pass."},
+        {id=1823064828, label="🤖 Auto Farm",      price="R$349", key="autoFarm",
+         desc="Your machines tick at 2× speed automatically. Earn coins even when you're AFK or exploring."},
+        {id=1822515059, label="💰 Auto Collect",   price="R$249", key="autoCollect",
+         desc="Coins from geysers fly straight to you. No more running around the map to grab them."},
+        {id=1822649609, label="🔥 Prestige Boost", price="R$199", key="prestigeBoost",
+         desc="Every rebirth costs 20% fewer coins. Makes the prestige grind noticeably faster across every run."},
+        {id=1821659972, label="🍀 Lucky Charm",    price="R$199", key="luckyCharm",
+         desc="Triples your jackpot chance and boosts the jackpot multiplier to 20×. Big swings when it hits."},
+        {id=1822655551, label="⚡ Speed Demon",    price="R$99",  key="speedDemon",
+         desc="Walk 8 units/sec faster than other players. Useful for chasing raids, defending plots, and PvP."},
+    }
+    for _,gp in ipairs(GAMEPASSES_LIST) do
+        local gpId=gp.id
+        local owned=ownedGP[gp.key]
+        gpRow(gp.label, gp.desc, owned and "✓ OWNED" or gp.price,
+            function()
+                if not owned then MarketplaceService:PromptGamePassPurchase(player,gpId) end
+            end,
+            owned and Color3.fromRGB(8,28,8) or Color3.fromRGB(22,16,38),
+            owned and Color3.fromRGB(0,200,80) or Color3.fromRGB(180,140,255))
+    end
+
+    scr.CanvasSize=UDim2.new(0,0,0,y+8)
 end
 
 -- ── STATS PANEL ──────────────────────────────────────────

@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Lighting          = game:GetService("Lighting")
 
 local coinBE = ReplicatedStorage:WaitForChild("CoinCollected_BE", 15)
+local VIP_PASS_ID = 1821720069
 
 -- ============================================================
 -- REMOVE DEFAULT BASEPLATE & SPAWN (prevents underground respawn)
@@ -456,7 +457,7 @@ vipBarrier.Touched:Connect(function(hit)
     local plr=Players:GetPlayerFromCharacter(char)
     if not plr then return end
     local ok,owns=pcall(function()
-        return game:GetService("MarketplaceService"):UserOwnsGamePassAsync(plr.UserId,1821720069)
+        return game:GetService("MarketplaceService"):UserOwnsGamePassAsync(plr.UserId,VIP_PASS_ID)
     end)
     if ok and owns then return end
     local hrp=char:FindFirstChild("HumanoidRootPart")

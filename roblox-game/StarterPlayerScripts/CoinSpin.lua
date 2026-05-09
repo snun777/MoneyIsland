@@ -3,4 +3,3 @@
 -- ClickDetector causes the hitbox to desync and clicks stop registering.
 -- Coins are static gold cylinders. Click them to collect!
 print("[MoneyIsland] CoinSpin: spin disabled to keep ClickDetectors working")
-hi

@@ -28,6 +28,7 @@ end)
 local GP = {
 	DOUBLE_COINS=1821720069, LUCKY_CHARM=1821659972,
 	SPEED_DEMON=1822655551,  PRESTIGE_BOOST=1822649609, AUTO_FARM=1823064828,
+	AUTO_COLLECT=1822515059,
 }
 local PRODUCTS = {
 	COINS_SMALL=3586040050, COINS_MEDIUM=3586040263,
@@ -58,11 +59,11 @@ local WEAPONS = {
 	 isProjectile=true,  isAoE=false,
 	 color=Color3.fromRGB(80,160,255), glow=Color3.fromRGB(60,120,255)},
 	{id="ThunderHammer", name="🔨 Thunder Hammer", desc="Shockwave hits ALL nearby enemies!",
-	 damage=22, range=16, cooldown=3.5, cost=300000,   prestigeReq=2,
+	 damage=22, range=16, cooldown=3.5, cost=1500000,  prestigeReq=0,
 	 isProjectile=false, isAoE=true,
 	 color=Color3.fromRGB(255,255,60), glow=Color3.fromRGB(255,220,0)},
 	{id="ShadowBlade",   name="🌑 Shadow Blade",   desc="Fast dark blade, lethal damage.",
-	 damage=48, range=12, cooldown=1.5, cost=2000000,  prestigeReq=4,
+	 damage=48, range=12, cooldown=1.5, cost=10000000, prestigeReq=0,
 	 isProjectile=false, isAoE=false,
 	 color=Color3.fromRGB(160,40,255), glow=Color3.fromRGB(120,0,200)},
 }
@@ -236,6 +237,7 @@ local function checkGamepasses(player)
 		{key="doubleCoin",id=GP.DOUBLE_COINS},
 		{key="luckyCharm",id=GP.LUCKY_CHARM},{key="speedDemon",id=GP.SPEED_DEMON},
 		{key="prestigeBoost",id=GP.PRESTIGE_BOOST},{key="autoFarm",id=GP.AUTO_FARM},
+		{key="autoCollect",id=GP.AUTO_COLLECT},
 	}) do
 		local ok,owns=pcall(MarketplaceService.UserOwnsGamePassAsync,MarketplaceService,player.UserId,c.id)
 		gps[c.key]=ok and owns or false
@@ -253,12 +255,16 @@ local function getCoinValue(player)
 	local str=d.prestigeStreak or 0; if str>0 then mult=mult*(1+0.1*math.min(str,5)) end
 	if activeEvents["DoubleIncome"]     then mult=mult*2  end
 	if activeEvents["MachineRebellion"] then mult=mult*3  end
+	local gps=playerGP[player.UserId] or {}
+	if gps.doubleCoin then mult=mult*2 end
 	return math.floor(BASE_COIN_VALUE*mult)
 end
 
 local function getTickInterval(player)
 	local d=playerData[player.UserId]; if not d then return TICK_BASE end
-	return math.max(TICK_FLOOR,TICK_BASE-(d.upgrades["touchSpeed"] or 0))
+	local base=math.max(TICK_FLOOR,TICK_BASE-(d.upgrades["touchSpeed"] or 0))
+	local gps=playerGP[player.UserId] or {}
+	return gps.autoFarm and math.max(TICK_FLOOR,math.floor(base/2)) or base
 end
 
 local function getPlotCoinValue(player,plotId)
@@ -316,12 +322,18 @@ coinBE.Event:Connect(function(player,isRare,geyserIdx,coinRef,isMega)
 	if not d then return end
 	if CoinDestroyBE then CoinDestroyBE:Fire(coinRef) end
 	local coins=getCoinValue(player)
+	local gps=playerGP[player.UserId] or {}
 	if isRare then
 		coins=coins*5; d.coins=d.coins+coins; d.totalEarned=(d.totalEarned or 0)+coins
 		player:SetAttribute("Coins",d.coins); pushStats(player)
 		RE.NotifyPlayer:FireClient(player,"💎 RARE COIN! ×5","+"..coins.." coins!","blue"); return
 	end
-	if math.random(100)<=3 then coins=coins*10; RE.NotifyPlayer:FireClient(player,"🍀 JACKPOT!","×10 coins!","green") end
+	local jackpotChance = gps.luckyCharm and 10 or 3
+	local jackpotMult   = gps.luckyCharm and 20 or 10
+	if math.random(100)<=jackpotChance then
+		coins=coins*jackpotMult
+		RE.NotifyPlayer:FireClient(player,"🍀 JACKPOT!","×"..jackpotMult.." coins!","green")
+	end
 	d.coins=d.coins+coins; d.totalEarned=(d.totalEarned or 0)+coins
 	player:SetAttribute("Coins",d.coins); pushStats(player)
 end)
@@ -392,6 +404,7 @@ task.spawn(function()
 					local cv=ls:FindFirstChild("Coins");        if cv then cv.Value=math.floor(d.coins) end
 					local rv=ls:FindFirstChild("Rebirths");     if rv then rv.Value=d.rebirths end
 					local tv=ls:FindFirstChild("Total Earned"); if tv then tv.Value=math.floor(d.totalEarned) end
+					player:SetAttribute("TotalEarned",math.floor(d.totalEarned))
 				end
 			end
 		end
@@ -469,7 +482,7 @@ local function handlePlayerDeath(attacker,victim)
 	end
 	RE.NotifyPlayer:FireClient(attacker,"💀 KILL! ⚔️","+"..stolen.." coins stolen from "..victim.Name.."!","gold")
 	RE.NotifyPlayer:FireClient(victim,"💀 You died!",attacker.Name.." got "..stolen.." of your coins! (20%)","red")
-	RE.PlayerDied:FireClient(victim,attacker.Name,5)
+	RE.PlayerDied:FireClient(victim,attacker.Name,stolen)
 	local char=victim.Character
 	if char then
 		local hum=char:FindFirstChildOfClass("Humanoid"); if hum then hum.Health=0 end
@@ -879,6 +892,7 @@ end)
 Players.PlayerAdded:Connect(function(player)
 	local d=loadData(player)
 	player:SetAttribute("Rebirths",d.rebirths)
+	player:SetAttribute("TotalEarned",math.floor(d.totalEarned or 0))
 	playerHP[player.UserId]=MAX_HP
 	task.spawn(function()
 		checkGamepasses(player)
@@ -889,10 +903,15 @@ Players.PlayerAdded:Connect(function(player)
 			RE.WeaponInfo:FireClient(player,WEAPONS,WEAPON_UPGRADE_COSTS,PLOT_PATHS)
 		end
 	end)
-	player.CharacterAdded:Connect(function()
+	player.CharacterAdded:Connect(function(char)
 		task.wait(0.5)
 		playerHP[player.UserId]=MAX_HP; playerDead[player.UserId]=nil
 		giveWeapon(player); sendHP(player)
+		local gps=playerGP[player.UserId] or {}
+		if gps.speedDemon then
+			local hum=char:FindFirstChild("Humanoid")
+			if hum then hum.WalkSpeed=24 end
+		end
 	end)
 	if d._offlineBonus and d._offlineBonus>0 then
 		local bonus=d._offlineBonus; d._offlineBonus=nil
@@ -949,8 +968,9 @@ end)
 -- ── REBIRTH ───────────────────────────────────────────────────
 RE.Rebirth.OnServerEvent:Connect(function(player)
 	local d=playerData[player.UserId]; if not d then return end
-	-- Cost triples each prestige: P1=100k, P2=300k, P3=900k, P4=2.7M, P5=8.1M ...
-	local cost=math.floor(100000*(3^d.rebirths))
+	-- Cost triples each prestige: P1=100k, P2=300k, P3=900k ... Prestige Boost pass = -20%
+	local gps=playerGP[player.UserId] or {}
+	local cost=math.floor(100000*(3^d.rebirths)*(gps.prestigeBoost and 0.8 or 1))
 	if d.coins<cost then RE.NotifyPlayer:FireClient(player,"❌ Need "..cost.." coins","Prestige costs more","red"); return end
 	local uid=player.UserId
 	for plotId,owned in pairs(d.ownedPlots or {}) do
@@ -999,20 +1019,34 @@ RE.RequestData.OnServerInvoke=function(player)
 	return d,UPGRADES
 end
 
+-- Refresh GP cache + re-apply perks when a gamepass is purchased mid-session
+MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, gpId, purchased)
+	if purchased then
+		checkGamepasses(player)
+		pushStats(player)
+		local char=player.Character
+		local gps=playerGP[player.UserId] or {}
+		if gps.speedDemon and char then
+			local hum=char:FindFirstChild("Humanoid")
+			if hum then hum.WalkSpeed=24 end
+		end
+	end
+end)
+
 -- ── MARKETPLACE ───────────────────────────────────────────────
 MarketplaceService.ProcessReceipt=function(info)
 	local player=Players:GetPlayerByUserId(info.PlayerId)
 	if not player then return Enum.ProductPurchaseDecision.NotProcessedYet end
 	local d=playerData[player.UserId]
 	if not d then return Enum.ProductPurchaseDecision.NotProcessedYet end
-	local amounts={[PRODUCTS.COINS_SMALL]=500,[PRODUCTS.COINS_MEDIUM]=2500,[PRODUCTS.COINS_LARGE]=10000}
+	local amounts={[PRODUCTS.COINS_SMALL]=5000,[PRODUCTS.COINS_MEDIUM]=25000,[PRODUCTS.COINS_LARGE]=75000}
 	if amounts[info.ProductId] then
 		local amt=amounts[info.ProductId]; d.coins=d.coins+amt; d.totalEarned=d.totalEarned+amt
 		pushStats(player); RE.NotifyPlayer:FireClient(player,"💰 Purchase!","+"..amt.." coins!","gold")
 		saveData(player); return Enum.ProductPurchaseDecision.PurchaseGranted
 	elseif info.ProductId==PRODUCTS.RESET then
-		d.upgrades={}; pushStats(player)
-		RE.NotifyPlayer:FireClient(player,"🔄 Reset!","Upgrades cleared!","blue")
+		d.upgrades={}; d.plotUpgrades={}; pushStats(player)
+		RE.NotifyPlayer:FireClient(player,"🔄 Reset!","All upgrades cleared!","blue")
 		saveData(player); return Enum.ProductPurchaseDecision.PurchaseGranted
 	end
 	return Enum.ProductPurchaseDecision.NotProcessedYet
@@ -1035,34 +1069,5 @@ PlotPurchaseBE.Event:Connect(function(player,plotId,cost)
 	RE.MachineRate:FireClient(player,plotId,getPlotCoinValue(player,plotId),getPlotTickInterval(player,plotId))
 end)
 
--- ── DEV RESET (/resetme in chat) ──────────────────────────────
-Players.PlayerChatted:Connect(function(player, msg)
-	if msg:lower() ~= "/resetme" then return end
-	local uid = player.UserId
-	-- Clear plot ownership for this player
-	for plotId, ownerUid in pairs(serverPlotOwners) do
-		if ownerUid == uid then serverPlotOwners[plotId] = nil end
-	end
-	plotTickLast[uid] = nil
-	-- Reset all data to defaults and wipe the datastore entry
-	local fresh = deepCopy(DEFAULT_DATA)
-	fresh.lastSave = os.time()
-	playerData[uid] = fresh
-	pcall(function() DS:SetAsync("MI20_"..uid, deepCopy(DEFAULT_DATA)) end)
-	player:SetAttribute("Rebirths", 0)
-	playerHP[uid] = MAX_HP; playerDead[uid] = nil; playerBlocking[uid] = nil
-	pushStats(player); sendHP(player)
-	RE.NotifyPlayer:FireClient(player, "🔄 Progress Reset!", "All data wiped — fresh start!", "blue")
-	if PrestigeResetBE then PrestigeResetBE:Fire(uid) end
-	task.defer(function()
-		local char = player.Character; if not char then return end
-		local hrp = char:FindFirstChild("HumanoidRootPart"); if hrp then hrp.CFrame = CFrame.new(0,4,0) end
-		-- Remove any tools so the default weapon is re-given
-		for _, o in ipairs(char:GetChildren()) do if o:IsA("Tool") then o:Destroy() end end
-		local bp = player.Backpack
-		if bp then for _, o in ipairs(bp:GetChildren()) do if o:IsA("Tool") then o:Destroy() end end end
-		giveWeapon(player)
-	end)
-end)
 
 print("[MoneyIsland] ✅ Server v20 loaded! No pickpocket/magnet, Auto-Shield, raid-dead fix, defender bar, CoinBlade fix, all players reset.")

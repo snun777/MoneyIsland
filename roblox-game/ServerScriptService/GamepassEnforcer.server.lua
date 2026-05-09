@@ -1,123 +1,41 @@
--- ============================================================
--- MONEY ISLAND TYCOON — GamepassEnforcer.lua
--- Place in: ServerScriptService
--- Handles all gamepass perks server-side
--- ============================================================
+-- GamepassEnforcer.server.lua
+-- Sends purchase confirmation toasts and refreshes the GP cache when a
+-- player buys a pass mid-session. Perk application (speed, auto-farm, etc.)
+-- is handled entirely by MainGameServer via its own checkGamepasses().
 
 local Players            = game:GetService("Players")
 local MarketplaceService = game:GetService("MarketplaceService")
 local ReplicatedStorage  = game:GetService("ReplicatedStorage")
 
--- Gamepass IDs (must match MainGameServer.lua)
 local GP = {
-	VIP        = 1821720069, -- Ultimate Ultra VIP experience!!!
-	AUTOFARM   = 1822515059, -- Auto Farm Upgrade
-	REBIRTH    = 1821659972, -- Rebirth (Jesus experience)
+	VIP           = 1821720069,
+	AUTO_FARM     = 1823064828,
+	AUTO_COLLECT  = 1822515059,
+	PRESTIGE_BOOST= 1822649609,
+	LUCKY_CHARM   = 1821659972,
+	SPEED_DEMON   = 1822655551,
 }
 
--- VIP barrier reference (set after map loads)
-local vipBarrier = nil
+local NOTIFICATIONS = {
+	[GP.VIP]           = {"⭐ VIP ACTIVATED!",     "2× coins on everything!",              "gold" },
+	[GP.AUTO_FARM]     = {"🤖 Auto Farm ON!",       "Your machines tick at 2× speed!",      "green"},
+	[GP.AUTO_COLLECT]  = {"💰 Auto Collect ON!",    "Geyser coins fly straight to you!",    "green"},
+	[GP.PRESTIGE_BOOST]= {"🔥 Prestige Boost ON!",  "Rebirth costs 20% less every run!",    "gold" },
+	[GP.LUCKY_CHARM]   = {"🍀 Lucky Charm ON!",     "3× jackpot chance + 20× multiplier!",  "green"},
+	[GP.SPEED_DEMON]   = {"⚡ Speed Demon ON!",     "You're now faster than everyone else!", "blue" },
+}
 
-task.delay(3, function()
-	local map = workspace:WaitForChild("MoneyIslandMap", 10)
-	if map then
-		local vipZone = map:FindFirstChild("VIPLounge")
-		if vipZone then
-			vipBarrier = vipZone:FindFirstChild("VIPBarrier")
-		end
-	end
-end)
-
--- check if a player has a gamepass (cached)
-local gpCache = {}
-local function hasPass(player, gpId)
-	local key = player.UserId .. "_" .. gpId
-	if gpCache[key] == nil then
-		local ok, result = pcall(function()
-			return MarketplaceService:UserOwnsGamePassAsync(player.UserId, gpId)
-		end)
-		gpCache[key] = ok and result or false
-	end
-	return gpCache[key]
-end
-
--- On new purchase during session, refresh cache
 MarketplaceService.PromptGamePassPurchaseFinished:Connect(function(player, gpId, purchased)
-	if purchased then
-		local key = player.UserId .. "_" .. gpId
-		gpCache[key] = true
-		applyPerks(player)
+	if not purchased then return end
+	if not player or not player.Parent then return end
 
-		-- notify via remote
-		local notify = ReplicatedStorage:FindFirstChild("NotifyPlayer")
-		if notify then
-			if gpId == GP.VIP then
-				notify:FireClient(player, "⭐ VIP ACTIVATED!", "2x coins + VIP Lounge unlocked!", "gold")
-			elseif gpId == GP.AUTOFARM then
-				notify:FireClient(player, "🤖 AUTO FARM ON!", "Coins collect automatically!", "green")
-			elseif gpId == GP.REBIRTH then
-				notify:FireClient(player, "🔥 EARLY REBIRTH!", "Rebirth is now unlocked!", "red")
-			end
-		end
+	local notify = ReplicatedStorage:FindFirstChild("NotifyPlayer")
+	if not notify then return end
+
+	local n = NOTIFICATIONS[gpId]
+	if n then
+		notify:FireClient(player, n[1], n[2], n[3])
 	end
-end)
-
-function applyPerks(player)
-	-- VIP: allow through barrier (disable collision for them)
-	if vipBarrier and hasPass(player, GP.VIP) then
-		local char = player.Character
-		if char then
-			-- use a NoCollisionConstraint or just teleport them past
-			-- simplest: create a per-player invisible force field
-			local ff = char:FindFirstChild("VIPPass")
-			if not ff then
-				local tag = Instance.new("BoolValue")
-				tag.Name  = "VIPPass"
-				tag.Parent = char
-			end
-		end
-	end
-
-	-- AUTO FARM: mark them for auto-collection in MainGameServer
-	if hasPass(player, GP.AUTOFARM) then
-		local char = player.Character
-		if char then
-			local tag = char:FindFirstChild("AutoFarm")
-			if not tag then
-				local t = Instance.new("BoolValue")
-				t.Name   = "AutoFarm"
-				t.Value  = true
-				t.Parent = char
-			end
-		end
-	end
-end
-
--- VIP barrier: reject non-VIP players who touch it
-if vipBarrier then
-	vipBarrier.Touched:Connect(function(hit)
-		local char = hit.Parent
-		local player = Players:GetPlayerFromCharacter(char)
-		if player and not hasPass(player, GP.VIP) then
-			-- push them back
-			local hrp = char:FindFirstChild("HumanoidRootPart")
-			if hrp then
-				hrp.CFrame = hrp.CFrame + Vector3.new(0, 0, 8)
-			end
-			local notify = ReplicatedStorage:FindFirstChild("NotifyPlayer")
-			if notify then
-				notify:FireClient(player, "⭐ VIP Only!", "Get the VIP Gamepass to enter! (💎 shop)", "gold")
-			end
-		end
-	end)
-end
-
-Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(function(char)
-		task.delay(1, function()
-			applyPerks(player)
-		end)
-	end)
 end)
 
 print("[MoneyIsland] ✅ Gamepass enforcer loaded!")

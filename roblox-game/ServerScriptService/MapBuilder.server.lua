@@ -902,11 +902,49 @@ local function doUnlock(plotId, ownerPlayer)
 	state.floorPart     = floor
 	state.floorOrigCol  = floorCol
 
+	-- Push any players standing inside the plot out before the machine spawns
+	local HALF = 27
+	for _, plr in ipairs(Players:GetPlayers()) do
+		local char = plr.Character
+		if not char then continue end
+		local hrp = char:FindFirstChild("HumanoidRootPart")
+		if not hrp then continue end
+		local pos = hrp.Position
+		if math.abs(pos.X - def.cx) < HALF and math.abs(pos.Z - def.cz) < HALF then
+			local ox = pos.X - def.cx
+			local oz = pos.Z - def.cz
+			if math.abs(ox) >= math.abs(oz) then
+				hrp.CFrame = CFrame.new(def.cx + (ox >= 0 and HALF + 3 or -HALF - 3), pos.Y + 4, pos.Z)
+			else
+				hrp.CFrame = CFrame.new(pos.X, pos.Y + 4, def.cz + (oz >= 0 and HALF + 3 or -HALF - 3))
+			end
+		end
+	end
+
 	-- Spawn this plot's unique machine
 	local builder = PLOT_MACHINE[def.id]
 	if builder then
 		builder(def.cx, def.cz, state.folder)
 	end
+
+	-- Safety net: keep new parts non-collideable for 1s so any straggler isn't trapped
+	local solidParts = {}
+	for _, part in ipairs(state.folder:GetDescendants()) do
+		if part:IsA("BasePart") and part.CanCollide then
+			part.CanCollide = false
+			table.insert(solidParts, part)
+		end
+	end
+	task.delay(1, function()
+		for _, part in ipairs(solidParts) do
+			if part.Parent then part.CanCollide = true end
+		end
+	end)
+
+	-- ── INCOME TICKER VISUAL ──────────────────────────────────────
+	-- A floating coin that orbits above the machine to show it's earning money.
+	-- Clients see the rate via MachineRate_RE; this just shows activity.
+	local tickerHeight = DECK_TOP + (def.cost >= 200000 and 36 or def.cost >= 75000 and 30 or def.cost >= 25000 and 24 or 20)
 
 	-- Owner nameplate — anchor height matches ticker so it sits just above the machine
 	if ownerPlayer then
@@ -917,11 +955,6 @@ local function doUnlock(plotId, ownerPlayer)
 		a.Transparency = 1
 		makeBillboard(a, "⚡ "..ownerPlayer.Name, Color3.fromRGB(255,200,0), 4, 220, 50, 80)
 	end
-
-	-- ── INCOME TICKER VISUAL ──────────────────────────────────────
-	-- A floating coin that orbits above the machine to show it's earning money.
-	-- Clients see the rate via MachineRate_RE; this just shows activity.
-	local tickerHeight = DECK_TOP + (def.cost >= 200000 and 36 or def.cost >= 75000 and 30 or def.cost >= 25000 and 24 or 20)
 	local tickerCoin = CYL({par=state.folder, name="IncomeCoin",
 		sz=Vector3.new(0.4, 2.8, 2.8),
 		cf=CFrame.new(def.cx + 8, tickerHeight, def.cz) * CFrame.Angles(0, 0, math.rad(90)),
